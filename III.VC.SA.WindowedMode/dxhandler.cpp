@@ -592,6 +592,29 @@ bool CDxHandler::IsCursorInClientRect(void)
 
 int CDxHandler::ProcessMouseState(void) 
 {
+	static bool bDirtyHack = false;
+	if (!bDirtyHack)
+	{
+		//this dirty hack somehow fixes d3d8to9 crash during martha's mug shot cutscene in gtavc.
+		//and also skygfx crash (see issue #1)
+		if (!bFullMode)
+		{
+			SetWindowPos(*hGameWnd, NULL, nNonFullPosX, nNonFullPosY, nNonFullWidth, nNonFullHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+		}
+		else
+		{
+			HMONITOR hMonitor = MonitorFromWindow(*hGameWnd, MONITOR_DEFAULTTONEAREST);
+			MONITORINFO monitorInfo;
+			monitorInfo.cbSize = sizeof(MONITORINFO);
+			GetMonitorInfo(hMonitor, &monitorInfo);
+			int nMonitorWidth = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
+			int nMonitorHeight = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
+			bRequestFullMode = true;
+			SetWindowPos(*hGameWnd, NULL, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, nMonitorWidth - 1, nMonitorHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+		}
+		bResChanged = true;
+		bDirtyHack = true;
+	}
 
 	static Fps _fps;
 	_fps.update();
