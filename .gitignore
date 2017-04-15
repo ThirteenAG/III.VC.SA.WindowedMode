@@ -5,6 +5,8 @@
 
 data/**/*.asi
 data/**/*.zip
+data/**/*.exe
+!data/7za.exe
 
 # User-specific files
 *.suo

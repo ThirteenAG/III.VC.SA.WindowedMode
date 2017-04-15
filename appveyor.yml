@@ -1,0 +1,28 @@
+version: 1.{build}
+max_jobs: 1
+image: Visual Studio 2017
+configuration: Release
+platform: x86
+install:
+- cmd: >-
+    git submodule update --init --recursive
+
+    premake5.bat
+build:
+  project: build/III.VC.SA.WindowedMode.sln
+  verbosity: minimal
+before_package:
+- cmd: >-
+    cd data
+
+    release.bat
+artifacts:
+- path: data/III.VC.SA.WindowedMode.zip
+  name: III.VC.SA.WindowedMode.zip
+deploy:
+- provider: GitHub
+  release: III.VC.SA.WindowedMode v1.$(appveyor_build_number)
+  description: '- [Readme](https://github.com/ThirteenAG/III.VC.SA.WindowedMode/blob/v1.0/README.md)'
+  auth_token:
+    secure: SXMI7bm5RKh5j1S8A8dnUP2HFw97xHHlJH+mA0hx819vtxOPCpMFY3aFZ+2v16ri
+  artifact: III.VC.SA.WindowedMode.zip
