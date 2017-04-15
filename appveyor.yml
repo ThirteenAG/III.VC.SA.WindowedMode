@@ -21,7 +21,8 @@ artifacts:
   name: III.VC.SA.WindowedMode.zip
 deploy:
 - provider: GitHub
-  release: III.VC.SA.WindowedMode v1.$(appveyor_build_number)
+  tag: v1.$(appveyor_build_version)
+  release: III.VC.SA.WindowedMode v1.$(appveyor_build_version)
   description: '- [Readme](https://github.com/ThirteenAG/III.VC.SA.WindowedMode/blob/v1.0/README.md)'
   auth_token:
     secure: SXMI7bm5RKh5j1S8A8dnUP2HFw97xHHlJH+mA0hx819vtxOPCpMFY3aFZ+2v16ri
