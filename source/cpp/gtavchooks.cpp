@@ -1,5 +1,21 @@
 #include "dxhandler.h"
 
+uint32_t HookDxCameraClearFixVCJmp;
+void __declspec(naked) HookDxCameraClearFixVC(void) {
+	static RwCamera* pCamera;
+
+	_asm mov ebp, [esp + 7Ch]
+	_asm mov pCamera, ebp
+	_asm pushad
+
+	CDxHandler::MainCameraRebuildRaster(pCamera);
+
+	_asm popad
+	_asm mov esi, [ebp + 60h]
+	_asm cmp byte ptr[esi + 20h], 5
+	_asm jmp HookDxCameraClearFixVCJmp
+}
+
 void CDxHandler::SetupHooksVC(void)
 {
 	CMBlurMotionBlurOpen = (void(*)(RwCamera*))0x55CE20;
@@ -58,19 +74,22 @@ void CDxHandler::SetupHooksVC(void)
 	}; injector::MakeInline<HookDxMouseUpdater>(0x4AD86D);
 
 
-	struct HookDxCameraClearFix
-	{
-		void operator()(injector::reg_pack& regs)
-		{
-			static RwCamera* pCamera;
-			regs.ebp = *(uintptr_t*)(regs.esp + 0x7C);
+	//struct HookDxCameraClearFix
+	//{
+	//	void operator()(injector::reg_pack& regs)
+	//	{
+	//		static RwCamera* pCamera;
+	//		regs.ebp = *(uintptr_t*)(regs.esp + 0x7C); //regs.ebp is 0 sometimes, so it crashes, but with asm it works for some reason
+	//
+	//		pCamera = (RwCamera*)regs.ebp;
+	//		CDxHandler::MainCameraRebuildRaster(pCamera);
+	//
+	//		regs.esi = *(uintptr_t*)(regs.ebp + 0x60);
+	//	}
+	//}; injector::MakeInline<HookDxCameraClearFix>(0x65D46D, 0x65D474);
 
-			pCamera = (RwCamera*)regs.ebp;
-			CDxHandler::MainCameraRebuildRaster(pCamera);
-
-			regs.esi = *(uintptr_t*)(regs.ebp + 0x60);
-		}
-	}; injector::MakeInline<HookDxCameraClearFix>(0x65D46D, 0x65D474);
+	injector::MakeJMP(0x65D46D, HookDxCameraClearFixVC, true);
+	HookDxCameraClearFixVCJmp = 0x65D474;
 
 	injector::MakeNOP(0x6011C0, 16, true);
 
