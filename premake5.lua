@@ -31,6 +31,7 @@ project "III.VC.SA.WindowedMode"
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
+	  characterset ("MBCS")
 
    filter "configurations:Release"
       defines { "NDEBUG" }
