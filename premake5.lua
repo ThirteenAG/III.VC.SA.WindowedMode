@@ -5,6 +5,7 @@ workspace "III.VC.SA.WindowedMode"
    location "build"
    objdir ("build/obj")
    buildlog ("build/log/%{prj.name}.log")
+   buildoptions {"-std:c++latest"}
       
 project "III.VC.SA.WindowedMode"
    kind "SharedLib"

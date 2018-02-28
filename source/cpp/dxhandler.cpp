@@ -52,6 +52,17 @@ bool CDxHandler::bUseBorder = true;
 SHELLEXECUTEINFO CDxHandler::ShExecInfo = { 0 };
 char CDxHandler::lpWindowName[MAX_PATH];
 
+std::tuple<int32_t, int32_t> GetDesktopRes()
+{
+    HMONITOR monitor = MonitorFromWindow(GetDesktopWindow(), MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info = {};
+    info.cbSize = sizeof(MONITORINFO);
+    GetMonitorInfo(monitor, &info);
+    int32_t DesktopResW = info.rcMonitor.right - info.rcMonitor.left;
+    int32_t DesktopResH = info.rcMonitor.bottom - info.rcMonitor.top;
+    return std::make_tuple(DesktopResW, DesktopResH);
+}
+
 void CDxHandler::ProcessIni(void)
 {
     bUseMenus = iniReader.ReadInteger("MAIN", "ShowMenu", 1) != 0;
@@ -116,13 +127,7 @@ void CDxHandler::AdjustPresentParams(D3D_TYPE* pParams)
 
     DWORD dwWndStyle = GetWindowLong(*hGameWnd, GWL_STYLE);
 
-    HMONITOR hMonitor = MonitorFromWindow(*hGameWnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO monitorInfo;
-    monitorInfo.cbSize = sizeof(MONITORINFO);
-    GetMonitorInfo(hMonitor, &monitorInfo);
-
-    int nMonitorWidth = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
-    int nMonitorHeight = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
+    auto[nMonitorWidth, nMonitorHeight] = GetDesktopRes();
 
     nCurrentWidth = (int)pParams->BackBufferWidth;
     nCurrentHeight = (int)pParams->BackBufferHeight;
@@ -196,7 +201,7 @@ void CDxHandler::AdjustPresentParams(D3D_TYPE* pParams)
 
     bOldRecursion = bStopRecursion;
     bStopRecursion = true;
-    SetWindowPos(*hGameWnd, HWND_NOTOPMOST, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, nClientWidth, nClientHeight, SWP_NOACTIVATE | (bFullMode ? 0 : SWP_NOMOVE));
+    SetWindowPos(*hGameWnd, HWND_NOTOPMOST, 0, 0, nClientWidth, nClientHeight, SWP_NOACTIVATE | (bFullMode ? 0 : SWP_NOMOVE));
     bStopRecursion = bOldRecursion;
 
     GetClientRect(*hGameWnd, &rcClient);
@@ -217,17 +222,11 @@ void CDxHandler::ToggleFullScreen(void)
     }
     else
     {
-        HMONITOR hMonitor = MonitorFromWindow(*hGameWnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO monitorInfo;
-        monitorInfo.cbSize = sizeof(MONITORINFO);
-        GetMonitorInfo(hMonitor, &monitorInfo);
-
-        int nMonitorWidth = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
-        int nMonitorHeight = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
+        auto[nMonitorWidth, nMonitorHeight] = GetDesktopRes();
 
         bRequestFullMode = true;
 
-        SetWindowPos(*hGameWnd, NULL, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, nMonitorWidth - 1, nMonitorHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+        SetWindowPos(*hGameWnd, NULL, 0, 0, nMonitorWidth, nMonitorHeight, SWP_NOACTIVATE | SWP_NOZORDER);
     }
     bResChanged = true;
 }
@@ -416,7 +415,7 @@ LRESULT APIENTRY CDxHandler::MvlWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
         if (bChangingLocked)
         {
             STYLESTRUCT* pStyleInfo = (STYLESTRUCT*)lParam;
-            pStyleInfo->styleNew = pStyleInfo->styleNew;
+            pStyleInfo->styleOld = pStyleInfo->styleNew;
         }
         return 0;
     case WM_ENTERSIZEMOVE:
@@ -584,28 +583,23 @@ bool CDxHandler::IsCursorInClientRect(void)
 
 int CDxHandler::ProcessMouseState(void)
 {
-    static bool bDirtyHack = false;
-    if (!bDirtyHack)
+    static bool bOnce = false;
+    if (!bOnce)
     {
-        //this dirty hack somehow fixes d3d8to9 crash during martha's mug shot cutscene in gtavc.
-        //and also skygfx crash (see issue #1)
+        auto[nMonitorWidth, nMonitorHeight] = GetDesktopRes();
         if (!bFullMode)
         {
+            nNonFullPosX = (((float)nMonitorWidth / 2.0f) - ((float)nNonFullWidth / 2.0f));
+            nNonFullPosY = (((float)nMonitorHeight / 2.0f) - ((float)nNonFullHeight / 2.0f));
             SetWindowPos(*hGameWnd, NULL, nNonFullPosX, nNonFullPosY, nNonFullWidth, nNonFullHeight, SWP_NOACTIVATE | SWP_NOZORDER);
         }
         else
         {
-            HMONITOR hMonitor = MonitorFromWindow(*hGameWnd, MONITOR_DEFAULTTONEAREST);
-            MONITORINFO monitorInfo;
-            monitorInfo.cbSize = sizeof(MONITORINFO);
-            GetMonitorInfo(hMonitor, &monitorInfo);
-            int nMonitorWidth = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
-            int nMonitorHeight = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
             bRequestFullMode = true;
-            SetWindowPos(*hGameWnd, NULL, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, nMonitorWidth - 1, nMonitorHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+            SetWindowPos(*hGameWnd, NULL, 0, 0, nMonitorWidth, nMonitorHeight, SWP_NOACTIVATE | SWP_NOZORDER);
         }
         bResChanged = true;
-        bDirtyHack = true;
+        bOnce = true;
     }
 
     static Fps _fps;
