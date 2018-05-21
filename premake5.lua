@@ -2,6 +2,7 @@ workspace "III.VC.SA.WindowedMode"
    configurations { "Release", "Debug" }
    platforms { "Win32" }
    architecture "x32"
+   characterset ("UNICODE")
    location "build"
    objdir ("build/obj")
    buildlog ("build/log/%{prj.name}.log")
@@ -32,14 +33,12 @@ project "III.VC.SA.WindowedMode"
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
-	  characterset ("MBCS")
 
    filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
 	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
-	  targetdir "data/"
+	  targetdir "data"
 	  
 	  
 project "III.VC.SA.CoordsManager"
@@ -70,11 +69,9 @@ project "III.VC.SA.CoordsManager"
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
-	  characterset ("MBCS")
 
    filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
 	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
-	  targetdir "data/"
+	  targetdir "data"

@@ -49,7 +49,7 @@ bool CDxHandler::bResChanged = false;
 bool CDxHandler::bWindowed = true;
 bool CDxHandler::bUseMenus = true;
 bool CDxHandler::bUseBorder = true;
-SHELLEXECUTEINFO CDxHandler::ShExecInfo = { 0 };
+SHELLEXECUTEINFOA CDxHandler::ShExecInfo = { 0 };
 char CDxHandler::lpWindowName[MAX_PATH];
 
 std::tuple<int32_t, int32_t> GetDesktopRes()
@@ -109,7 +109,7 @@ void CDxHandler::AdjustPresentParams(D3D_TYPE* pParams)
     if (hMenuWindows == NULL && (bInGame3VC || bInGameSA))
     {
         hMenuWindows = CreateMenu();
-        AppendMenu(hMenuWindows, MF_STRING, (WORD)&hMenuWindows, "CoordsManager");
+        AppendMenuA(hMenuWindows, MF_STRING, (WORD)&hMenuWindows, "CoordsManager");
     }
 
     pParams->Windowed = TRUE;
@@ -373,7 +373,7 @@ LRESULT APIENTRY CDxHandler::MvlWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
             static auto cb = [](HWND hwnd, LPARAM lParam) -> BOOL
             {
                 char text[25];
-                GetWindowText(hwnd, text, 25);
+                GetWindowTextA(hwnd, text, 25);
                 if (strncmp(text, "Coords Manager", strlen("Coords Manager")) == 0)
                 {
                     SetForegroundWindow(hwnd);
@@ -400,7 +400,7 @@ LRESULT APIENTRY CDxHandler::MvlWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
                 ShExecInfo.lpDirectory = NULL;
                 ShExecInfo.nShow = SW_SHOWNORMAL;
                 ShExecInfo.hInstApp = NULL;
-                ShellExecuteEx(&ShExecInfo);
+                ShellExecuteExA(&ShExecInfo);
                 //WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
             }
         }
@@ -589,8 +589,8 @@ int CDxHandler::ProcessMouseState(void)
         auto[nMonitorWidth, nMonitorHeight] = GetDesktopRes();
         if (!bFullMode)
         {
-            nNonFullPosX = (((float)nMonitorWidth / 2.0f) - ((float)nNonFullWidth / 2.0f));
-            nNonFullPosY = (((float)nMonitorHeight / 2.0f) - ((float)nNonFullHeight / 2.0f));
+            nNonFullPosX = static_cast<int>(((float)nMonitorWidth / 2.0f) - ((float)nNonFullWidth / 2.0f));
+            nNonFullPosY = static_cast<int>(((float)nMonitorHeight / 2.0f) - ((float)nNonFullHeight / 2.0f));
             SetWindowPos(*hGameWnd, NULL, nNonFullPosX, nNonFullPosY, nNonFullWidth, nNonFullHeight, SWP_NOACTIVATE | SWP_NOZORDER);
         }
         else
@@ -606,7 +606,7 @@ int CDxHandler::ProcessMouseState(void)
     _fps.update();
 
     sprintf(lpWindowName, "%s | %dx%d @ %d fps", RsGlobal->AppName, RsGlobal->MaximumWidth, RsGlobal->MaximumHeight, _fps.get());
-    SetWindowText(*hGameWnd, lpWindowName);
+    SetWindowTextA(*hGameWnd, lpWindowName);
 
     bool bShowCursor = true;
     bool bForeground = (GetForegroundWindow() == *hGameWnd);
@@ -659,7 +659,7 @@ int CDxHandler::ProcessMouseState(void)
 
         bUseBorder = true;
         SetMenu(*hGameWnd, bUseMenus ? hMenuWindows : NULL);
-        iniReader.WriteInteger("MAIN", "ShowMenu", bUseMenus);
+        iniReader.WriteInteger("MAIN", "ShowMenu", bUseMenus, true);
     }
     else
     {
@@ -676,7 +676,7 @@ int CDxHandler::ProcessMouseState(void)
                 dwWndStyle |= WS_OVERLAPPEDWINDOW;
             }
             SetWindowLong(*hGameWnd, GWL_STYLE, dwWndStyle);
-            iniReader.WriteInteger("MAIN", "ShowBorder", bUseBorder);
+            iniReader.WriteInteger("MAIN", "ShowBorder", bUseBorder, true);
         }
     }
     bShiftEnterLastState = bShiftEnterCurState;
