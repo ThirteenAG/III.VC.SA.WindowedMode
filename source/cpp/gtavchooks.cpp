@@ -29,20 +29,20 @@ void CDxHandler::SetupHooksVC(void)
     Direct3DDeviceReplace();
     InjectWindowProc();
 
-    struct HookDxInputCreateDevice
-    {
-        void operator()(injector::reg_pack& regs)
-        {
-            static bool bExclusiveMode;
-
-            regs.eax = *(uintptr_t*)(regs.esp + 0x4);
-            bExclusiveMode = LOBYTE(regs.eax);
-
-            CDxHandler::DxInputCreateDevice(bExclusiveMode);
-
-            *(uintptr_t*)regs.esp = 0x5FFAA3;
-        }
-    }; injector::MakeInline<HookDxInputCreateDevice>(0x5FFA20);
+    //struct HookDxInputCreateDevice
+    //{
+    //    void operator()(injector::reg_pack& regs)
+    //    {
+    //        static bool bExclusiveMode;
+    //
+    //        regs.eax = *(uintptr_t*)(regs.esp + 0x4);
+    //        bExclusiveMode = LOBYTE(regs.eax);
+    //
+    //        CDxHandler::DxInputCreateDevice(bExclusiveMode);
+    //
+    //        *(uintptr_t*)regs.esp = 0x5FFAA3;
+    //    }
+    //}; injector::MakeInline<HookDxInputCreateDevice>(0x5FFA20);
 
 
     struct HookDxMouseUpdater
