@@ -117,7 +117,7 @@ void CDxHandler::AdjustPresentParams(D3D_TYPE* pParams)
     pParams->FullScreen_PresentationInterval = 0;
     pParams->FullScreen_RefreshRateInHz = 0;
     pParams->EnableAutoDepthStencil = TRUE;
-    pParams->BackBufferFormat = D3DFMT_X8R8G8B8;
+    pParams->BackBufferFormat = D3DFMT_A8R8G8B8;
 
     //pParams->MultiSampleType = (D3DMULTISAMPLE_TYPE)8;
 
