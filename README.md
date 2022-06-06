@@ -5,7 +5,7 @@ Originally created by maxorator as part of Maxo's Vehicle Loader for Vice City, 
 
 ----
 ## Installation
-1. [ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) is required. If you don't have it, just install [Widescreen Fix]([https://thirteenag.github.io/wfp#sec1](https://thirteenag.github.io/wfp#gta)), ASI Loader comes with it.
+1. [ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) is required. If you don't have it, just install [Widescreen Fix](https://thirteenag.github.io/wfp#gta), ASI Loader comes with it.
 2. Unpack III.VC.SA.WindowedMode.asi and (optionally) III.VC.SA.CoordsManager.exe to scripts folder, or [modloader](https://github.com/thelink2012/modloader/releases) folder.
 3. Start the game.
 
