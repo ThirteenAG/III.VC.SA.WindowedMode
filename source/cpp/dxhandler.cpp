@@ -452,6 +452,12 @@ LRESULT APIENTRY CDxHandler::MvlWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
             return 0;
         }
         break;
+    case WM_SYSCOMMAND:
+        if (wParam == SC_KEYMENU)
+        {
+            return 0;
+        }
+        break;
     }
 
     return CallWindowProc(wndProcOld, hwnd, uMsg, wParam, lParam);
