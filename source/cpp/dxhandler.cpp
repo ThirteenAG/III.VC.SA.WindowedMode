@@ -41,7 +41,6 @@ uint32_t CDxHandler::RwD3D8AdapterInformation_DisplayMode;
 uint32_t CDxHandler::CamCol;
 uint32_t CDxHandler::HookParams;
 uint32_t CDxHandler::HookDirect3DDeviceReplacerJmp;
-uint32_t CDxHandler::WSFixHook;
 bool* CDxHandler::bBlurOn;
 bool CDxHandler::bInGame3VC = false;
 bool CDxHandler::bInGameSA = false;
@@ -633,9 +632,24 @@ int CDxHandler::ProcessMouseState(void)
     {
         if (bInGame3VC)
         {
-            auto UpdateWSFixData = injector::GetBranchDestination(WSFixHook, true);
-            if (UpdateWSFixData != nullptr)
-                injector::cstd<void()>::call(UpdateWSFixData);
+            auto GetWidescreenFix = []() -> HMODULE {
+                constexpr auto dll1 = L"GTAVC.WidescreenFix.asi";
+                constexpr auto dll2 = L"GTA3.WidescreenFix";
+                auto hm = GetModuleHandleW(dll1);
+                if (!hm)
+                    hm = GetModuleHandleW(dll2);
+                return hm;
+            };
+
+            auto m = GetWidescreenFix();
+            if (m)
+            {
+                auto UpdateVars = (void (*)())GetProcAddress(m, "UpdateVars");
+                if (UpdateVars)
+                {
+                    UpdateVars();
+                }
+            }
         }
 
         if (bResChanged)

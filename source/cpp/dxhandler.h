@@ -79,7 +79,6 @@ public:
     static uint32_t CamCol;
     static uint32_t HookParams;
     static uint32_t HookDirect3DDeviceReplacerJmp;
-    static uint32_t WSFixHook;
     static bool bInGame3VC;
     static bool bInGameSA;
     static bool bResChanged;

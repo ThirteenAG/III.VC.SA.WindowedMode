@@ -22,7 +22,6 @@ void CDxHandler::SetupHooksIII(void)
     HookParams = 0x943010;
     bBlurOn = (bool*)0x95CDAD;
     RsGlobal = (RsGlobalType*)0x8F4360;
-    WSFixHook = 0x582E78;
 
     injector::MakeJMP(0x5B7DF4, HookDirect3DDeviceReplacer, true);
     HookDirect3DDeviceReplacerJmp = 0x5B7DF9;
