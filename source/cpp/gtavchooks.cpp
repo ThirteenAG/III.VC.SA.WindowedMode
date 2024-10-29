@@ -2,6 +2,7 @@
 
 void CDxHandler::SetupHooksVC(void)
 {
+    bInGame3VC = true;
     CMBlurMotionBlurOpen = (void(*)(RwCamera*))0x55CE20;
     DxInputGetMouseState = (int(*)(int))0x5FF290;
     ReinitializeRw = (void(*)(int))0x601770;
@@ -129,7 +130,6 @@ void CDxHandler::SetupHooksVC(void)
         void operator()(injector::reg_pack& regs)
         {
             *(uintptr_t*)regs.esp = 0x6004E7;
-            bInGame3VC = true;
             injector::MakeInline<HookResChange>(0x4999CA);
             injector::MakeNOP(0x499F57, 2, true); //menu resoluton option unblocking
             injector::MakeJMP(0x49EDBC, 0x49EF35, true);

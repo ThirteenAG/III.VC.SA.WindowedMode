@@ -2,6 +2,7 @@
 
 void CDxHandler::SetupHooksIII(void)
 {
+    bInGame3VC = true;
     CMBlurMotionBlurOpen = (void(*)(RwCamera*))0x50AE40;
     DxInputGetMouseState = (int(*)(int))0x583870;
     ReinitializeRw = (void(*)(int))0x581630;
@@ -127,7 +128,6 @@ void CDxHandler::SetupHooksIII(void)
         void operator()(injector::reg_pack& regs)
         {
             *(uintptr_t*)(regs.esp - 4) = 0x582F3D;
-            bInGame3VC = true;
             injector::MakeInline<HookResChange>(0x48783B);
             injector::MakeNOP(0x4882CA, 6, true); //menu resoluton option unblocking
 

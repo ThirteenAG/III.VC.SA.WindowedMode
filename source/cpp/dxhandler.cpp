@@ -116,7 +116,12 @@ void CDxHandler::AdjustPresentParams(D3D_TYPE* pParams)
     pParams->FullScreen_PresentationInterval = 0;
     pParams->FullScreen_RefreshRateInHz = 0;
     pParams->EnableAutoDepthStencil = TRUE;
-    pParams->BackBufferFormat = D3DFMT_A8R8G8B8;
+    pParams->BackBufferFormat = D3DFMT_X8R8G8B8;
+
+    if (bInGameSA)
+    {
+        pParams->BackBufferFormat = D3DFMT_A8R8G8B8;
+    }
 
     //pParams->MultiSampleType = (D3DMULTISAMPLE_TYPE)8;
 
@@ -773,7 +778,7 @@ void __declspec(naked) CDxHandler::HookDirect3DDeviceReplacer(void)
 
     _asm popad
     _asm call[ecx + 3Ch]
-        _asm mov hRes, eax
+    _asm mov hRes, eax
     _asm pushad
 
     bChangingLocked = bOldLocked;

@@ -2,6 +2,7 @@
 
 void CDxHandler::SetupHooksSA(void)
 {
+	bInGameSA = true;
 	CPostEffectsDoScreenModeDependentInitializations = (void(*)())0x7046D0;
 	CPostEffectsSetupBackBufferVertex = (void(*)())0x7043D0;
 	DxInputGetMouseState = (int(*)(int))0x746ED0;
