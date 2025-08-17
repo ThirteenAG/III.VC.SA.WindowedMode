@@ -9,7 +9,6 @@ bool CDxHandler::bChangingLocked = false;
 HMENU CDxHandler::hMenuWindows = NULL;
 WNDPROC CDxHandler::wndProcOld = NULL;
 bool CDxHandler::bIsInputExclusive = false;
-bool CDxHandler::bCursorStatus = true;
 bool CDxHandler::bGameMouseInactive = false;
 bool CDxHandler::bCtrlAltLastState = false;
 bool CDxHandler::bAltEnterLastState = false;
@@ -60,6 +59,18 @@ std::tuple<int32_t, int32_t> GetDesktopRes()
     int32_t DesktopResW = info.rcMonitor.right - info.rcMonitor.left;
     int32_t DesktopResH = info.rcMonitor.bottom - info.rcMonitor.top;
     return std::make_tuple(DesktopResW, DesktopResH);
+}
+
+void SetCursorVisible(bool state)
+{
+    CURSORINFO info = { sizeof(CURSORINFO) };
+    if (!GetCursorInfo(&info)) return;
+
+    bool currState = info.flags & CURSOR_SHOWING;
+    while (currState != state)
+    {
+        currState = ShowCursor(state) >= 0;
+    }
 }
 
 void CDxHandler::ProcessIni(void)
@@ -415,6 +426,8 @@ LRESULT APIENTRY CDxHandler::MvlWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
             ActivateGameMouse();
         }
         break;
+    case WM_SETCURSOR:
+        return DefWindowProc(hwnd, uMsg, wParam, lParam); // restore proper handling of ShowCursor
     case WM_STYLECHANGING:
         if (bChangingLocked)
         {
@@ -743,11 +756,7 @@ int CDxHandler::ProcessMouseState(void)
 
     bCtrlAltLastState = bCtrlAltCurState;
 
-    if (bCursorStatus != bShowCursor)
-    {
-        ShowCursor(bShowCursor);
-        bCursorStatus = bShowCursor;
-    }
+    SetCursorVisible(bShowCursor);
 
     if ((!*bMenuVisible && bGameMouseInactive) || (*bMenuVisible && !IsCursorInClientRect()))
     {
