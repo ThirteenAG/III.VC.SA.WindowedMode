@@ -3,7 +3,7 @@
 CIniReader iniReader("");
 int CDxHandler::nResetCounter = 0;
 int CDxHandler::nCurrentWidth = 0, CDxHandler::nCurrentHeight = 0;
-int CDxHandler::nNonFullWidth = 600, CDxHandler::nNonFullHeight = 450, CDxHandler::nNonFullPosX = 0, CDxHandler::nNonFullPosY = 0;
+int CDxHandler::nNonFullWidth = 600, CDxHandler::nNonFullHeight = 450, CDxHandler::nNonFullPosX = -1, CDxHandler::nNonFullPosY = -1;
 bool CDxHandler::bFullMode = false, CDxHandler::bRequestFullMode = false, CDxHandler::bRequestNoBorderMode = false;
 bool CDxHandler::bChangingLocked = false;
 HMENU CDxHandler::hMenuWindows = NULL;
@@ -195,28 +195,42 @@ void CDxHandler::AdjustPresentParams(D3D_TYPE* pParams)
         nClientHeight += rcClient.top;
     }
 
-    bStopRecursion = bOldRecursion;
-
-    if (nClientWidth > nMonitorWidth)
-        nClientWidth = nMonitorWidth;
-
-    if (nClientHeight > nMonitorHeight)
-        nClientHeight = nMonitorHeight;
+    nClientWidth = min(nClientWidth, nMonitorWidth);
+    nClientHeight = min(nClientHeight, nMonitorHeight);
 
     if (!bFullMode)
     {
-        RECT rcWindow;
-        GetWindowRect(*hGameWnd, &rcWindow);
-
         nNonFullWidth = nCurrentWidth;
         nNonFullHeight = nCurrentHeight;
-        nNonFullPosX = rcWindow.left;
-        nNonFullPosY = rcWindow.top;
+
+        static bool bFirstTime = true;
+        if (bFirstTime)
+        {
+            // load window position from config
+            nNonFullPosX = iniReader.ReadInteger("MAIN", "PosX", -1);
+            nNonFullPosY = iniReader.ReadInteger("MAIN", "PosY", -1);
+
+            // center on the screen
+            if (nNonFullPosX == -1) nNonFullPosX = (nMonitorWidth - nClientWidth) / 2;
+            if (nNonFullPosY == -1) nNonFullPosY = (nMonitorHeight - nClientHeight) / 2;
+
+            bFirstTime = false;
+        }
+        else
+        {
+            RECT rcWindow;
+            GetWindowRect(*hGameWnd, &rcWindow);
+            nNonFullPosX = rcWindow.left;
+            nNonFullPosY = rcWindow.top;
+        }
+
+        SetWindowPos(*hGameWnd, HWND_NOTOPMOST, nNonFullPosX, nNonFullPosY, nClientWidth, nClientHeight, SWP_NOACTIVATE);
+    }
+    else // full screen
+    {
+        SetWindowPos(*hGameWnd, HWND_NOTOPMOST, 0, 0, nClientWidth, nClientHeight, SWP_NOACTIVATE | SWP_NOMOVE);
     }
 
-    bOldRecursion = bStopRecursion;
-    bStopRecursion = true;
-    SetWindowPos(*hGameWnd, HWND_NOTOPMOST, 0, 0, nClientWidth, nClientHeight, SWP_NOACTIVATE | (bFullMode ? 0 : SWP_NOMOVE));
     bStopRecursion = bOldRecursion;
 
     GetClientRect(*hGameWnd, &rcClient);
@@ -244,6 +258,8 @@ void CDxHandler::ToggleFullScreen(void)
         SetWindowPos(*hGameWnd, NULL, 0, 0, nMonitorWidth, nMonitorHeight, SWP_NOACTIVATE | SWP_NOZORDER);
     }
     bResChanged = true;
+
+    iniReader.WriteInteger("MAIN", "FullMode", bFullMode, true);
 }
 
 void CDxHandler::StoreRestoreWindowInfo(bool bRestore)
@@ -446,6 +462,13 @@ LRESULT APIENTRY CDxHandler::MvlWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
     {
         if (uMsg == WM_EXITSIZEMOVE)
         {
+            RECT rect;
+            if(GetWindowRect(*hGameWnd, &rect))
+            {
+                iniReader.WriteInteger("MAIN", "PosX", rect.left, true);
+                iniReader.WriteInteger("MAIN", "PosY", rect.top, true);
+            }
+
             bSizingLoop = false;
         }
 
@@ -606,25 +629,6 @@ bool CDxHandler::IsCursorInClientRect(void)
 
 int CDxHandler::ProcessMouseState(void)
 {
-    static bool bOnce = false;
-    if (!bOnce)
-    {
-        auto[nMonitorWidth, nMonitorHeight] = GetDesktopRes();
-        if (!bFullMode)
-        {
-            nNonFullPosX = static_cast<int>(((float)nMonitorWidth / 2.0f) - ((float)nNonFullWidth / 2.0f));
-            nNonFullPosY = static_cast<int>(((float)nMonitorHeight / 2.0f) - ((float)nNonFullHeight / 2.0f));
-            SetWindowPos(*hGameWnd, NULL, nNonFullPosX, nNonFullPosY, nNonFullWidth, nNonFullHeight, SWP_NOACTIVATE | SWP_NOZORDER);
-        }
-        else
-        {
-            bRequestFullMode = true;
-            SetWindowPos(*hGameWnd, NULL, 0, 0, nMonitorWidth, nMonitorHeight, SWP_NOACTIVATE | SWP_NOZORDER);
-        }
-        bResChanged = true;
-        bOnce = true;
-    }
-
     static Fps _fps;
     _fps.update();
 
