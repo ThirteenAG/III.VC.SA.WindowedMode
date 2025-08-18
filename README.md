@@ -26,8 +26,6 @@ Originally created by maxorator as part of Maxo's Vehicle Loader for Vice City, 
 
 >* If SilentPatch is installed, you won't be able to move mouse cursor while in-game. Enter main menu before activating mouse cursor.
 
->* In San Andreas, mouse cursor is not visible.
-
 ----
 ## Credits
 * [maxorator](http://gtaforums.com/topic/477801-maxos-vehicle-loader/)
