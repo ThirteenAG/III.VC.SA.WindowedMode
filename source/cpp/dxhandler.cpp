@@ -63,10 +63,11 @@ std::tuple<int32_t, int32_t> GetDesktopRes()
 
 void SetCursorVisible(bool state)
 {
+    // ShowCursor returns state. Use with current visibility to prevent flickering
     CURSORINFO info = { sizeof(CURSORINFO) };
     if (!GetCursorInfo(&info)) return;
+    bool currState = ShowCursor(info.flags & CURSOR_SHOWING) >= 0; 
 
-    bool currState = info.flags & CURSOR_SHOWING;
     while (currState != state)
     {
         currState = ShowCursor(state) >= 0;
@@ -228,7 +229,7 @@ void CDxHandler::AdjustPresentParams(D3D_TYPE* pParams)
     }
     else // full screen
     {
-        SetWindowPos(*hGameWnd, HWND_NOTOPMOST, 0, 0, nClientWidth, nClientHeight, SWP_NOACTIVATE | SWP_NOMOVE);
+        SetWindowPos(*hGameWnd, HWND_NOTOPMOST, 0, 0, nClientWidth, nClientHeight, SWP_NOACTIVATE);
     }
 
     bStopRecursion = bOldRecursion;
@@ -436,6 +437,17 @@ LRESULT APIENTRY CDxHandler::MvlWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
             }
         }
         break;
+    case WM_KILLFOCUS:
+    case WM_ACTIVATE:
+        if (uMsg == WM_KILLFOCUS || wParam == WA_INACTIVE) // focus lost
+        {
+            // clear resolution info from window tile
+            if (!bFullMode && bUseBorder)
+                SetWindowTextA(*hGameWnd, RsGlobal->AppName);
+
+            SetCursorVisible(true);
+        }
+        break;
     case WM_LBUTTONUP:
         if (!*bMenuVisible && IsCursorInClientRect())
         {
@@ -632,8 +644,11 @@ int CDxHandler::ProcessMouseState(void)
     static Fps _fps;
     _fps.update();
 
-    sprintf(lpWindowName, "%s | %dx%d @ %d fps", RsGlobal->AppName, RsGlobal->MaximumWidth, RsGlobal->MaximumHeight, _fps.get());
-    SetWindowTextA(*hGameWnd, lpWindowName);
+    if (!bFullMode && bUseBorder)
+    {
+        sprintf(lpWindowName, "%s | %dx%d @ %d fps", RsGlobal->AppName, RsGlobal->MaximumWidth, RsGlobal->MaximumHeight, _fps.get());
+        SetWindowTextA(*hGameWnd, lpWindowName);
+    }
 
     bool bShowCursor = true;
     bool bForeground = (GetForegroundWindow() == *hGameWnd);
