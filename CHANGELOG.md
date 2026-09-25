@@ -1,3 +1,14 @@
+## 2.2
+
+- improved window resizing and Direct3D device reset handling in GTA3, GTA-VC and GTA SA
+- fixed resolution changes from the game's display settings
+- Alt+Enter now toggles between desktop-sized borderless fullscreen and the previous windowed style
+- added Ctrl+Enter to switch between bordered and borderless window styles
+- added a 640x480 fallback when the saved windowed resolution matches the desktop resolution
+- improved window sizing with DPI scaling and centering on secondary monitors
+- deferred post-effect updates until rendering resumes after a device reset
+- removed the menu frame limiter from this plugin; it is now provided by Widescreen Fix through the MenuFrameLimit setting
+
 ## 2.0
 - added error message about unsupported game version
 - added error message about missing ASI Loader

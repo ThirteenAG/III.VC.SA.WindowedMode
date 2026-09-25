@@ -19,6 +19,7 @@ Originally created by **maxorator** as part of **Maxo's Vehicle Loader** for Vic
 ----
 ## Hotkeys
 * **Alt+Enter**: Toggle between borderless-fullscreen and windowed modes
+* **Ctrl+Enter**: Toggle between bordered and borderless window styles
 
 ----
 ## Credits

@@ -41,7 +41,7 @@ void WindowedMode::InitGta3()
 		{
 			*(DWORD*)(0x943038) = regs.ebp; // original action replaced by the patch
 
-			inst->WindowCalculateGeometry();
+			inst->InitPresentationParameters();
 		}
 	}; injector::MakeInline<Patch_InitPresentationParams>(0x5B7DA1, 0x5B7DA7);
 
@@ -64,12 +64,7 @@ void WindowedMode::InitGta3()
 	{
 		void operator()(injector::reg_pack& regs)
 		{
-			// restore potentially corrupted entry before reading it
-			if (!inst->videoModesBackup.empty() && regs.eax < inst->videoModesBackup.size())
-				(*inst->rwVideoModes)[regs.eax] = inst->videoModesBackup[regs.eax];
-
-			auto mode = *inst->rwVideoModes + regs.eax;
-			inst->WindowResize({ (LONG)mode->width, (LONG)mode->height });
+			inst->ChangeResolution(regs.eax);
 		}
 	}; injector::MakeInline<Patch_ChangeResolution>(0x487842);
 }

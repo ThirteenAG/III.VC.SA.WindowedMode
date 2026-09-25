@@ -24,6 +24,8 @@ void WindowedMode::InitGtaSA()
 	VerifyMemory("CreateWindow", 0x7455D5, 6, 0x4A88D8AA);
 	VerifyMemory("InitPresentationParams", 0x7F670A, 6, 0xAB349BBF);
 	VerifyMemory("InitD3dDevice", 0x7F6800, 6, 0xEDAE7102);
+	VerifyMemory("Options>Resolution hook", 0x57D096, 5, 0xC41B9B94);
+	VerifyMemory("ChangeVideoMode hook", 0x745C75, 5, 0x59C86E7D);
 #endif
 
 	// do not show device selection dialog in case of multiple display monitors
@@ -36,13 +38,18 @@ void WindowedMode::InitGtaSA()
 	injector::MakeNOP(0x7455D5, 6);
 	injector::MakeCALL(0x7455D5, WindowedMode::InitWindow);
 
+	// Explicit menu resolution request; AA/settings changes keep the window size.
+	injector::MakeCALL(0x57D096, WindowedMode::ChangeResolutionSA);
+	// Keep the native RW resource release/restore path for all video-mode changes.
+	injector::MakeCALL(0x745C75, WindowedMode::ChangeVideoModeSA);
+
 	struct Patch_InitPresentationParams // just before D3D device is created
 	{
 		void operator()(injector::reg_pack& regs)
 		{
 			regs.ecx = *(DWORD*)(0xC97C4C); // original action replaced by the patch
 
-			inst->WindowCalculateGeometry();
+			inst->InitPresentationParameters();
 		}
 	}; injector::MakeInline<Patch_InitPresentationParams>(0x7F670A, 0x7F6710);
 

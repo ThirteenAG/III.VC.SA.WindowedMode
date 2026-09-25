@@ -104,24 +104,22 @@ void WindowedMode::InitD3dDevice()
 
 	auto vTable = *(uintptr_t**)d3dDevice;
 	DWORD oldProtect;
-	injector::UnprotectMemory(vTable, 20 * sizeof(uintptr_t), oldProtect);
+	if (!injector::UnprotectMemory(vTable, 20 * sizeof(uintptr_t), oldProtect)) return;
 
-	if (IsD3D9())
+	const auto resetIndex = IsD3D9() ? 16 : 14;
+	const auto presentIndex = resetIndex + 1;
+	// Device recreation can reuse a vtable that we already hooked.
+	if (vTable[resetIndex] != (uintptr_t)&D3dResetHook)
 	{
-		d3dResetOri = reinterpret_cast<decltype(d3dResetOri)>(vTable[16]);
-		vTable[16] = (uintptr_t)&D3dResetHook;
-
-		d3dPresentOri = reinterpret_cast<decltype(d3dPresentOri)>(vTable[17]);
-		vTable[17] = (uintptr_t)&D3dPresentHook;
+		d3dResetOri = reinterpret_cast<decltype(d3dResetOri)>(vTable[resetIndex]);
+		vTable[resetIndex] = (uintptr_t)&D3dResetHook;
 	}
-	else
+	if (vTable[presentIndex] != (uintptr_t)&D3dPresentHook)
 	{
-		d3dResetOri = reinterpret_cast<decltype(d3dResetOri)>(vTable[14]);
-		vTable[14] = (uintptr_t)&D3dResetHook;
-
-		d3dPresentOri = reinterpret_cast<decltype(d3dPresentOri)>(vTable[15]);
-		vTable[15] = (uintptr_t)&D3dPresentHook;
+		d3dPresentOri = reinterpret_cast<decltype(d3dPresentOri)>(vTable[presentIndex]);
+		vTable[presentIndex] = (uintptr_t)&D3dPresentHook;
 	}
+	injector::ProtectMemory(vTable, 20 * sizeof(uintptr_t), oldProtect);
 }
 
 void WindowedMode::InitConfig()
@@ -136,6 +134,9 @@ bool WindowedMode::LoadConfig()
 {
 	windowMode = (WindowMode)config.ReadInteger("window", "mode", WindowMode::Windowed);
 	windowMode = std::clamp(windowMode, WindowMode::Min, WindowMode::Max);
+	windowedStyle = (WindowMode)std::clamp(config.ReadInteger("window", "windowedStyle",
+		windowMode == Fullscreen ? Windowed : windowMode), int(Windowed), int(WindowedBorderless));
+	if (windowMode != Fullscreen) windowedStyle = windowMode;
 
 	bool maximize = config.ReadInteger("window", "maximized", 0) != false;
 
@@ -148,7 +149,6 @@ bool WindowedMode::LoadConfig()
 	windowPos = windowPosWindowed;
 	windowSize = windowSizeClient = windowSizeWindowed;
 	
-	menuFrameRateLimit = config.ReadInteger("game", "menuFPS", 30);
 	autoPause = config.ReadInteger("game", "autoPause", true) != false;
 	autoResume = config.ReadInteger("game", "autoResume", true) != false;
 
@@ -157,6 +157,7 @@ bool WindowedMode::LoadConfig()
 
 void WindowedMode::SaveConfig()
 {
+	config.WriteString("window", "windowedStyle", StringPrintf("%d\t; 1: framed, 2: borderless", windowedStyle));
 	config.WriteString("window", "mode",		StringPrintf("%d\t\t\t; 1: window, 2: window borderless, 3: fullscreen", windowMode));
 	config.WriteString("window", "maximized",	StringPrintf("%d", IsZoomed(window)));
 	config.WriteString("window", "positionX",	StringPrintf("%d\t; -1: centered", windowPosWindowed.x));
@@ -164,7 +165,6 @@ void WindowedMode::SaveConfig()
 	config.WriteString("window", "resolutionX",	StringPrintf("%d", windowSizeWindowed.x));
 	config.WriteString("window", "resolutionY",	StringPrintf("%d", windowSizeWindowed.y));
 	
-	config.WriteString("game", "menuFPS",		StringPrintf("%d\t\t; frame rate limit for main menu. 0: unlimited", menuFrameRateLimit));
 	config.WriteString("game", "autoPause",		StringPrintf("%d\t\t; pause the game on window deactivation", autoPause));
 	config.WriteString("game", "autoResume",	StringPrintf("%d\t; resume the game on window activation", autoResume));
 }
@@ -205,6 +205,7 @@ DWORD WindowedMode::WindowStyleEx() const
 
 void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
 {
+	if (windowUpdating) return;
 	windowUpdating = true;
 
 	POINT windowCenter = { windowPos.x + windowSize.x / 2, windowPos.y + windowSize.y / 2};
@@ -236,8 +237,8 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
 		// window position
 		if (center)
 		{
-			windowPosWindowed.x = (monitorWidth - windowSize.x) / 2;
-			windowPosWindowed.y = (monitorHeight - windowSize.y) / 2;
+			windowPosWindowed.x = monitorRect.left + (monitorWidth - windowSize.x) / 2;
+			windowPosWindowed.y = monitorRect.top + (monitorHeight - windowSize.y) / 2;
 		}
 		
 		if (monitorSingle) // keep entire window on the screen
@@ -263,7 +264,7 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
 	{
 		SetWindowLong(window, GWL_STYLE, WindowStyle());
 		SetWindowLong(window, GWL_EXSTYLE, WindowStyleEx());
-		SetWindowPos(window, 0, 0, 0, 0, 0, SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOSENDCHANGING | SWP_FRAMECHANGED | SWP_SHOWWINDOW); // update the frame
+		SetWindowPos(window, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW); // update the frame
 		auto padding = GetFrameSize(true);
 
 		SetWindowPos(window, 0,
@@ -271,9 +272,19 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
 			windowPos.y - padding.top,
 			windowSize.x,
 			windowSize.y,
-			SWP_NOOWNERZORDER | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
+			SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
 		WindowUpdateTitle();
+	}
+
+	// Windows is authoritative (DPI, maximization and frame metrics can change).
+	RECT client;
+	if (window && !IsIconic(window) && GetClientRect(window, &client) &&
+		client.right > 0 && client.bottom > 0)
+	{
+		windowSizeClient = { client.right, client.bottom };
+		if (!IsZoomed(window) && windowMode != WindowMode::Fullscreen)
+			windowSizeWindowed = windowSizeClient;
 	}
 
 	// apply resolution to game internals
@@ -292,6 +303,17 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
 		rsGlobal->screenHeight = rsGlobal->MaximumHeight = windowSizeClient.y;
 	}
 
+	// Do not edit Present here: it belongs to RenderWare's reset/recovery path.
+	// In particular, WM_SIZE can be dispatched synchronously from inside Reset.
+	windowUpdating = false;
+	if (resizeWindow && window && d3dDevice && !resetInProgress)
+		CallWindowProc(oriWindowProc, window, WM_SIZE, SIZE_RESTORED,
+			MAKELPARAM(windowSizeClient.x, windowSizeClient.y));
+}
+
+void WindowedMode::InitPresentationParameters()
+{
+	WindowCalculateGeometry();
 	if (IsD3D9())
 	{
 		d3dPresentParams9->Windowed = TRUE;
@@ -315,65 +337,125 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
 		d3dPresentParams8->FullScreen_RefreshRateInHz = 0;
 	}
 
-	// write the resolution into video display modes list
-	if (*rwVideoModes)
+	// Only adapt the startup mode. Keep the menu's original resolutions intact.
+	BackupVideoModes();
+	const auto current = RwEngineGetCurrentVideoMode();
+	if (*rwVideoModes && current < videoModesBackup.size())
 	{
-		// backup display modes infos before making any changes
-		if (videoModesBackup.empty())
-		{
-			auto count = RwEngineGetNumVideoModes();
-			videoModesBackup.resize(count);
-			memcpy(videoModesBackup.data(), *rwVideoModes, count * sizeof(DisplayMode));
-		}
-
-		static int prevVideoMode = -1;
-		int currVideoMode = RwEngineGetCurrentVideoMode();
-	
-		// restore previous display mode info to its original state
-		if (prevVideoMode != -1 && currVideoMode != prevVideoMode) (*rwVideoModes)[prevVideoMode] = videoModesBackup[prevVideoMode];
-		prevVideoMode = currVideoMode;
-
-		// write modified resolution into current display mode info
-		auto& mode = (*rwVideoModes)[currVideoMode];
+		if (modifiedVideoMode >= 0 && modifiedVideoMode < (int)videoModesBackup.size())
+			(*rwVideoModes)[modifiedVideoMode] = videoModesBackup[modifiedVideoMode];
+		modifiedVideoMode = (int)current;
+		auto& mode = (*rwVideoModes)[current];
 		mode.width = windowSizeClient.x;
 		mode.height = windowSizeClient.y;
 		mode.format = IsD3D9() ? d3dPresentParams9->BackBufferFormat : d3dPresentParams8->BackBufferFormat;
 		mode.refreshRate = IsD3D9() ? d3dPresentParams9->FullScreen_RefreshRateInHz : d3dPresentParams8->FullScreen_RefreshRateInHz;
 		mode.flags &= ~1; // clear fullscreen flag
 	}
+}
 
-	windowUpdating = false;
+void WindowedMode::BackupVideoModes()
+{
+	const auto count = RwEngineGetNumVideoModes();
+	if (!*rwVideoModes || !count || count == DWORD(-1)) return;
+	if (videoModesSource != *rwVideoModes || videoModesBackup.size() != count)
+	{
+		videoModesSource = *rwVideoModes;
+		videoModesBackup.assign(videoModesSource, videoModesSource + count);
+		modifiedVideoMode = -1;
+	}
+}
+
+void WindowedMode::ChangeResolution(DWORD modeIndex)
+{
+	BackupVideoModes();
+	if (!*rwVideoModes || modeIndex >= videoModesBackup.size()) return;
+	const auto& mode = videoModesBackup[modeIndex];
+	if (mode.width < UINT(Resolution_Min.x) || mode.height < UINT(Resolution_Min.y) ||
+		mode.width > LONG_MAX || mode.height > LONG_MAX) return;
+	WindowResize({ (LONG)mode.width, (LONG)mode.height });
+}
+
+void __cdecl WindowedMode::ChangeResolutionSA(DWORD modeIndex)
+{
+	inst->ChangeResolution(modeIndex);
+	injector::cstd<void(DWORD)>::call(0x745C70, modeIndex);
+}
+
+int __cdecl WindowedMode::ChangeVideoModeSA(DWORD modeIndex)
+{
+	inst->BackupVideoModes();
+	if (!*inst->rwVideoModes || modeIndex >= inst->videoModesBackup.size()) return 0;
+	// SA also uses this call for AA changes and loading settings. Those are not
+	// window resize requests. Let RW rebuild resources, using the actual client.
+	auto& mode = (*inst->rwVideoModes)[modeIndex];
+	const auto saved = mode;
+	mode.width = inst->windowSizeClient.x;
+	mode.height = inst->windowSizeClient.y;
+	mode.flags &= ~1u;
+	const auto result = injector::cstd<int(DWORD)>::call(0x7F8640, modeIndex);
+	mode = saved;
+	if (inst->RwEngineGetCurrentVideoMode() == modeIndex)
+	{
+		if (inst->modifiedVideoMode >= 0 && inst->modifiedVideoMode != (int)modeIndex)
+			(*inst->rwVideoModes)[inst->modifiedVideoMode] = inst->videoModesBackup[inst->modifiedVideoMode];
+		inst->modifiedVideoMode = (int)modeIndex;
+		mode.flags &= ~1u;
+	}
+	return result;
 }
 
 void WindowedMode::WindowResize(POINT resolution)
 {
+	if (resolution.x < Resolution_Min.x || resolution.y < Resolution_Min.y) return;
+	// Restore before assigning the requested size: restoring dispatches WM_SIZE.
+	if (IsZoomed(window))
+	{
+		windowUpdating = true;
+		ShowWindow(window, SW_RESTORE);
+		windowUpdating = false;
+	}
 	if (windowMode == WindowMode::Fullscreen)
-		windowMode = WindowMode::Windowed;
+		windowMode = windowedStyle;
 
 	windowSizeWindowed = resolution;
-	windowPosWindowed = { -1, -1 }; // re-center on resolution change
 	WindowCalculateGeometry(true, true); // and resize the window
 	SaveConfig();
 }
 
-void WindowedMode::WindowModeCycle()
+void WindowedMode::WindowToggleFullscreen()
 {
-	if (IsIconic(window)) return; // minimized
-
-	if (!HasFocus(window)) return; // window inactive
-
-	if (IsZoomed(window)) // maximized
+	if (IsIconic(window) || !HasFocus(window)) return;
+	const auto monitor = GetMonitorRect({windowPos.x + windowSize.x / 2, windowPos.y + windowSize.y / 2});
+	const POINT desktop = {monitor.right - monitor.left, monitor.bottom - monitor.top};
+	const bool leaving = windowMode == Fullscreen;
+	if (!leaving) windowedStyle = windowMode;
+	if (IsZoomed(window))
 	{
-		windowMode = WindowedMode::Min;
+		windowUpdating = true;
 		ShowWindow(window, SW_RESTORE);
+		windowUpdating = false;
 	}
-	else
-	{
-		BYTE& mode = *(BYTE*)&windowMode;
-		mode += 1;
-		if (mode > WindowedMode::Max) mode = WindowedMode::Min;
-	}
+	// A desktop-sized borderless window would otherwise look unchanged when
+	// leaving fullscreen. Keep an unmistakably windowed restore size instead.
+	const bool fallback = windowSizeWindowed.x == desktop.x && windowSizeWindowed.y == desktop.y;
+	if (fallback) windowSizeWindowed = {640, 480};
+	windowMode = leaving ? windowedStyle : Fullscreen;
+	WindowCalculateGeometry(leaving && fallback, true);
+	SaveConfig();
+}
 
+void WindowedMode::WindowToggleStyle()
+{
+	if (IsIconic(window) || !HasFocus(window)) return;
+	if (IsZoomed(window))
+	{
+		windowUpdating = true;
+		ShowWindow(window, SW_RESTORE);
+		windowUpdating = false;
+	}
+	windowedStyle = windowedStyle == Windowed ? WindowedBorderless : Windowed;
+	windowMode = windowedStyle;
 	WindowCalculateGeometry(false, true);
 	SaveConfig();
 }
@@ -405,6 +487,14 @@ void WindowedMode::WindowUpdateTitle()
 
 LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (msg == WM_NCCREATE) inst->window = wnd;
+	// The original games send this malformed notification after a camera resize
+	// fails while maximized. Neither our handler nor DefWindowProc can consume it.
+	if (msg == WM_WINDOWPOSCHANGED && !lParam) return 0;
+	// Reset can synchronously dispatch activation and position messages as well
+	// as WM_SIZE. Never re-enter game/rendering code through those callbacks.
+	if (inst->resetInProgress && msg != WM_STYLECHANGING)
+		return DefWindowProc(wnd, msg, wParam, lParam);
 	switch (msg)
 	{
 		// window focus/defocus
@@ -468,19 +558,34 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 			if (!HasFocus(wnd))
 				return DefWindowProc(wnd, msg, wParam, lParam); // bypass the game
 			
-			// handle Alt+Enter key combination
-			if (wParam == VK_RETURN && IsKeyDown(VK_MENU))
+			// handle Alt+Enter and Ctrl+Enter key combinations
+			const bool alt = (lParam & (1L << 29)) != 0;
+			const bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+			if (wParam == VK_RETURN && (alt || control || inst->enterShortcutDown))
 			{
-				inst->WindowModeCycle();
-				return DefWindowProc(wnd, msg, wParam, lParam); // bypass the game
+				if (!(lParam & (1L << 30)) && !inst->enterShortcutDown)
+				{
+					if (alt) inst->WindowToggleFullscreen();
+					else if (control) inst->WindowToggleStyle();
+				}
+				inst->enterShortcutDown = true;
+				return 0;
 			}
 
 			break;
 		}
+		case WM_SYSKEYUP:
+		case WM_KEYUP:
+			if (wParam == VK_RETURN && inst->enterShortcutDown)
+			{
+				inst->enterShortcutDown = false;
+				return 0;
+			}
+			break;
 
 		// handle the window menu Alt+Key hotkey messages
 		case WM_SYSCOMMAND:
-			if (wParam == SC_KEYMENU)
+			if ((wParam & 0xFFF0) == SC_KEYMENU)
 				return S_OK; // handled
 			break;
 
@@ -528,6 +633,18 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 		}
 
 		// user dragging the window edge
+		case WM_ENTERSIZEMOVE:
+			inst->sizing = true;
+			ClipCursor(NULL);
+			return 0;
+
+		case WM_GETMINMAXINFO:
+		{
+			auto limits = (MINMAXINFO*)lParam;
+			limits->ptMinTrackSize = inst->SizeFromClient(Resolution_Min);
+			return 0;
+		}
+
 		case WM_SIZING:
 		{
 			auto wndRect = (RECT*)lParam;
@@ -580,22 +697,28 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 			if (wParam == WMSZ_TOP || wParam == WMSZ_TOPLEFT || wParam == WMSZ_TOPRIGHT) wndRect->top = wndRect->bottom - size.y;
 			if (wParam == WMSZ_BOTTOM || wParam == WMSZ_BOTTOMLEFT || wParam == WMSZ_BOTTOMRIGHT) wndRect->bottom = wndRect->top + size.y;
 
-			return DefWindowProc(wnd, msg, wParam, lParam);
+			return TRUE;
 		}
 
 		case WM_EXITSIZEMOVE:
+			inst->sizing = false;
 			inst->WindowCalculateGeometry(false, true);
+			inst->SaveConfig();
+			inst->MouseUpdate(true);
+			return 0;
 
 		// minimize, maximize, restore
 		case WM_SIZE:
-			if (wParam != SIZE_MINIMIZED && wParam != SIZE_MAXHIDE) // prevent game from updating resolution for minimized window
+			if (!inst->windowUpdating && !inst->resetInProgress && !inst->sizing &&
+				wParam != SIZE_MINIMIZED && wParam != SIZE_MAXHIDE && LOWORD(lParam) && HIWORD(lParam))
 				CallWindowProc(inst->oriWindowProc, wnd, msg, wParam, lParam); // inform the game
 			return DefWindowProc(wnd, msg, wParam, lParam); // call default as otherwise maximization will not work correctly on later Windows versions
 
 		// position or size changed
 		case WM_WINDOWPOSCHANGED:
 		{
-			if (inst->windowUpdating || IsIconic(wnd)) break; // minimized
+			if (inst->windowUpdating || inst->resetInProgress || IsIconic(wnd))
+				return DefWindowProc(wnd, msg, wParam, lParam);
 
 			bool updated = false;
 			auto info = (WINDOWPOS*)lParam;
@@ -623,7 +746,10 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 
 			if (updated)
 			{
-				inst->windowSizeClient = inst->ClientFromSize(inst->windowSize);
+				RECT client;
+				if (!GetClientRect(wnd, &client) || client.right <= 0 || client.bottom <= 0)
+					return DefWindowProc(wnd, msg, wParam, lParam);
+				inst->windowSizeClient = { client.right, client.bottom };
 				if (inst->windowMode != WindowMode::Fullscreen && !IsZoomed(wnd))
 				{
 					inst->windowPosWindowed = inst->windowPos;
@@ -631,10 +757,12 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 				}
 				inst->WindowCalculateGeometry();
 				inst->WindowUpdateTitle();
-				inst->SaveConfig();
+				if (!inst->sizing) inst->SaveConfig();
 			}
 
-			break;
+			// DefWindowProc generates WM_SIZE/WM_MOVE. The game's handler must not
+			// run a second time or resize the camera while a Reset is in progress.
+			return DefWindowProc(wnd, msg, wParam, lParam);
 		}
 	}
 
@@ -675,7 +803,14 @@ RECT WindowedMode::GetFrameSize(bool padOnly) const
 	}
 	else
 	{
-		AdjustWindowRectEx(&frame, WindowStyle(), false, WindowStyleEx());
+		using GetDpi = UINT(WINAPI*)(HWND);
+		using AdjustForDpi = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+		static const auto user32 = GetModuleHandleA("user32.dll");
+		static const auto getDpi = reinterpret_cast<GetDpi>(GetProcAddress(user32, "GetDpiForWindow"));
+		static const auto adjustForDpi = reinterpret_cast<AdjustForDpi>(GetProcAddress(user32, "AdjustWindowRectExForDpi"));
+		if (!window || !getDpi || !adjustForDpi ||
+			!adjustForDpi(&frame, WindowStyle(), false, WindowStyleEx(), getDpi(window)))
+			AdjustWindowRectEx(&frame, WindowStyle(), false, WindowStyleEx());
 		frame.left *= -1; // offset to thickness
 		frame.top *= -1; // offset to thickness
 	}
@@ -690,51 +825,53 @@ bool WindowedMode::IsD3D9() const
 
 HRESULT WindowedMode::D3dPresentHook(IDirect3DDevice8* self, const RECT* srcRect, const RECT* dstRect, HWND wnd, const RGNDATA* region)
 {
+	// Reset returns before RW restores its rasters. Present is the first hooked
+	// point at which those resources and the camera dimensions are valid again.
+	if (inst->postEffectUpdatePending && SUCCEEDED(self->TestCooperativeLevel()))
+	{
+		inst->postEffectUpdatePending = false;
+		inst->UpdatePostEffect();
+	}
 	inst->MouseUpdate();
 
 	if (inst->fpsCounter.update())
 		inst->WindowUpdateTitle();
 
-	auto result = inst->d3dPresentOri(self, srcRect, dstRect, wnd, region);
-
-	// limit framerate in main menu
-	if (inst->menuFrameRateLimit > 0 && inst->IsMainMenuVisible())
-	{
-		static DWORD prevTime = 0;
-		DWORD currTime = timeGetTime();
-	
-		while (true)
-		{
-			DWORD delta = currTime - prevTime;
-
-			if (delta >= (1000 / (DWORD)inst->menuFrameRateLimit))
-				break;
-
-			Sleep(1);
-			currTime = timeGetTime();
-		}
-		prevTime = currTime;
-	}
-
-	return result;
+	return inst->d3dPresentOri(self, srcRect, dstRect, wnd, region);
 }
 
 HRESULT WindowedMode::D3dResetHook(IDirect3DDevice8* self, D3DPRESENT_PARAMETERS* parameters)
 {
-	if (parameters->BackBufferWidth == inst->windowSizeClient.x && parameters->BackBufferHeight == inst->windowSizeClient.y)
-	{
-		inst->WindowCalculateGeometry(); // update presentation params
-	}
-	else // resolution changed
-	{
-		inst->WindowResize({ (LONG)parameters->BackBufferWidth, (LONG)parameters->BackBufferHeight });
-	}
-
-	auto result = inst->d3dResetOri(self, inst->d3dPresentParams8);
-
-	if (SUCCEEDED(result))
-		inst->UpdatePostEffect();
-
+	if (!parameters || inst->resetInProgress) return D3DERR_INVALIDCALL;
+	inst->resetInProgress = true;
+	inst->postEffectUpdatePending = false;
+	// Preserve the caller's structure, including AA/depth settings and rollback
+	// sizes. D3D8 and D3D9 have different layouts after MultiSampleType.
+	// Zero dimensions mean the current client size, not a menu request.
+	auto reset = [self](auto& caller) {
+		auto effective = caller;
+		RECT client = {};
+		GetClientRect(inst->window, &client);
+		if (!effective.BackBufferWidth) effective.BackBufferWidth = client.right;
+		if (!effective.BackBufferHeight) effective.BackBufferHeight = client.bottom;
+		if (!effective.BackBufferWidth || !effective.BackBufferHeight) return D3DERR_INVALIDCALL;
+		effective.Windowed = TRUE;
+		effective.hDeviceWindow = inst->window;
+		effective.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		effective.FullScreen_RefreshRateInHz = 0;
+		if (!inst->IsD3D9()) effective.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+		// Some runtimes clear the dimensions/count/format in this in/out argument.
+		// RW reads them after Reset, so retain the effective values on success.
+		auto driverParameters = effective;
+		const auto result = inst->d3dResetOri(self, reinterpret_cast<D3DPRESENT_PARAMETERS*>(&driverParameters));
+		if (SUCCEEDED(result)) caller = effective;
+		return result;
+	};
+	const auto result = inst->IsD3D9()
+		? reset(*reinterpret_cast<D3DPRESENT_PARAMETERS_D3D9*>(parameters))
+		: reset(*parameters);
+	inst->resetInProgress = false;
+	inst->postEffectUpdatePending = SUCCEEDED(result);
 	return result;
 }
 
@@ -829,31 +966,20 @@ void WindowedMode::UpdatePostEffect()
 	switch(gameTitle)
 	{
 		case GameTitle::GTA_3:
-			injector::cstd<void(RwCamera*)>::call(0x50AE40, *(RwCamera**)0x72676C); // CMBlurMotion::BlurOpen(RwCamera*)
+			if (auto cam = *(RwCamera**)0x72676C; cam && cam->frameBuffer)
+				injector::cstd<void(RwCamera*)>::call(0x50AE40, cam); // CMBlurMotion::BlurOpen(RwCamera*)
 			break;
 			
 		case GameTitle::GTA_VC:
-			injector::cstd<void(RwCamera*)>::call(0x55CE20, *(RwCamera**)0x8100BC); // CMBlurMotion::BlurOpen(RwCamera*)
+			if (auto cam = *(RwCamera**)0x8100BC; cam && cam->frameBuffer)
+				injector::cstd<void(RwCamera*)>::call(0x55CE20, cam); // CMBlurMotion::BlurOpen(RwCamera*)
 			break;
 			
 		case GameTitle::GTA_SA:
 		{
-			POINT oriSize;
 			auto cam = *(RwCamera**)0xC1703C; // Scene.m_pRwCamera
-			if (cam)
-			{
-				oriSize = { cam->frameBuffer->nWidth, cam->frameBuffer->nHeight }; // store
-				cam->frameBuffer->nWidth = windowSizeClient.x;
-				cam->frameBuffer->nHeight = windowSizeClient.y;
-			}
-
-			injector::cstd<void()>::call(0x7043D0); // CPostEffects::SetupBackBufferVertex()
-
-			if (cam)
-			{
-				cam->frameBuffer->nWidth = oriSize.x; // restore
-				cam->frameBuffer->nHeight = oriSize.y;
-			}
+			if (cam && cam->frameBuffer)
+				injector::cstd<void()>::call(0x7043D0); // CPostEffects::SetupBackBufferVertex()
 			break;
 		}
 	}

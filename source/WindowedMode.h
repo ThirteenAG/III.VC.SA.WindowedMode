@@ -25,7 +25,9 @@ public:
 	DWORD (*RwEngineGetNumVideoModes)();
 	DWORD (*RwEngineGetCurrentVideoMode)();
 	uintptr_t frontEndMenuManager;
-    std::vector<DisplayMode> videoModesBackup;
+	std::vector<DisplayMode> videoModesBackup;
+	DisplayMode* videoModesSource = nullptr;
+	int modifiedVideoMode = -1;
 
 	// constructor taking addresses for specific game version
 	WindowedMode(
@@ -63,7 +65,12 @@ public:
 	
 	HWND window = 0;
 	bool windowUpdating = false; // update in progress
+	bool resetInProgress = false;
+	bool sizing = false;
+	bool postEffectUpdatePending = false;
 	WindowMode windowMode = WindowMode::Windowed;
+	WindowMode windowedStyle = WindowMode::Windowed;
+	bool enterShortcutDown = false;
 	HICON windowIcon = NULL;
 	char windowClassName[64];
 	char windowTitle[64];
@@ -77,7 +84,13 @@ public:
 
 	void WindowCalculateGeometry(bool center = false, bool resizeWindow = false);
 	void WindowResize(POINT resolution);
-	void WindowModeCycle();
+	void ChangeResolution(DWORD modeIndex);
+	void BackupVideoModes();
+	void InitPresentationParameters();
+	static void __cdecl ChangeResolutionSA(DWORD modeIndex);
+	static int __cdecl ChangeVideoModeSA(DWORD modeIndex);
+	void WindowToggleFullscreen();
+	void WindowToggleStyle();
 	DWORD WindowStyle() const;
 	DWORD WindowStyleEx() const;
 	void WindowUpdateTitle();
@@ -90,17 +103,16 @@ public:
 	bool IsD3D9() const;
 
 	HRESULT static __stdcall D3dPresentHook(IDirect3DDevice8* self, const RECT* srcRect, const RECT* dstRect, HWND wnd, const RGNDATA* region);
-	decltype(D3dPresentHook)* d3dPresentOri;
+	decltype(D3dPresentHook)* d3dPresentOri = nullptr;
 
 	HRESULT static __stdcall D3dResetHook(IDirect3DDevice8* self, D3DPRESENT_PARAMETERS* parameters);
-	decltype(D3dResetHook)* d3dResetOri;
+	decltype(D3dResetHook)* d3dResetOri = nullptr;
 
 	// other
 	FpsCounter fpsCounter;
 	bool autoPause = true;
 	bool autoResume = true;
 	bool autoPauseExecuted = false;
-	int menuFrameRateLimit = 30;
 
 	bool IsMainMenuVisible() const;
 	void SwitchMainMenu(bool show);
