@@ -1,5 +1,9 @@
 ## 2.2
 
+- refactored game bindings into pattern-based modules, adding GTA III and Vice City v1.1 and Steam executable support
+- preserved the game's registered window class and chained its window procedure
+- added a documented INI with backward-compatible settings migration
+
 - improved window resizing and Direct3D device reset handling in GTA3, GTA-VC and GTA SA
 - fixed resolution changes from the game's display settings
 - Alt+Enter now toggles between desktop-sized borderless fullscreen and the previous windowed style

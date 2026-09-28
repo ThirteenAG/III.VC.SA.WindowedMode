@@ -1,29 +1,23 @@
-#include "WindowedMode.h"
+#include "stdafx.h"
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
+import Hooks;
+
+extern "C" __declspec(dllexport) void InitializeASI()
 {
-	if (reason == DLL_PROCESS_ATTACH)
-	{
-		char name[128];
-		injector::address_manager::singleton().GetVersionText(name);
+    static std::once_flag flag;
+    std::call_once(flag, []()
+    {
+        try { InstallHooks(); }
+        catch (const std::exception& error) { ShowError("%s", error.what()); }
+    });
+}
 
-		if (!_stricmp(name, "GTA III 1.0.0.0 UNK_REGION"))
-		{
-			WindowedMode::InitGta3();
-		}
-		else if (!_stricmp(name, "GTA VC 1.0.0.0 UNK_REGION"))
-		{
-			WindowedMode::InitGtaVC();
-		}
-		else if (!_stricmp(name, "GTA SA 1.0.0.0 US"))
-		{
-			WindowedMode::InitGtaSA();
-		}
-		else
-		{
-			ShowError("Game version \"%s\" is not supported! \nSee readme file.", name);
-		}
-	}
-
-	return TRUE;
+BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
+{
+    if (reason == DLL_PROCESS_ATTACH)
+    {
+        DisableThreadLibraryCalls(module);
+        InitializeASI();
+    }
+    return TRUE;
 }

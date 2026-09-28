@@ -3,6 +3,8 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+data/**/*.lib
+data/**/*.exp
 data/**/*.asi
 data/**/*.zip
 data/**/*.exe
