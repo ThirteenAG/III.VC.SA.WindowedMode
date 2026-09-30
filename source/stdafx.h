@@ -5,14 +5,12 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
-#include <map>
 #include "common.h"
 #include "Hooking.Patterns.h"
 #include "safetyhook.hpp"

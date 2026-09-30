@@ -62,14 +62,6 @@ typedef struct _D3DPRESENT_PARAMETERS_D3D9_
     UINT FullScreen_PresentationInterval;
 } D3DPRESENT_PARAMETERS_D3D9;
 
-struct RwVideoMode
-{
-    int32_t width;
-    int32_t height;
-    int32_t depth;
-    int32_t flags;
-};
-
 struct RsPlatformSpecific
 {
     HWND window;
@@ -93,9 +85,6 @@ struct RsGlobalType
     int frameLimit;
     int quit;
     RsPlatformSpecific* ps;
-    //RsInputDevice keyboard;
-    //RsInputDevice mouse;
-    //RsInputDevice pad;
 };
 
 struct RsGlobalTypeSA
@@ -106,34 +95,6 @@ struct RsGlobalTypeSA
     int frameLimit;
     int quit;
     RsPlatformSpecific* ps;
-    //RsInputDevice keyboard;
-    //RsInputDevice mouse;
-    //RsInputDevice pad;
-};
-
-enum RwRasterType
-{
-    rwRASTERTYPENORMAL = 0x00,
-    rwRASTERTYPEZBUFFER = 0x01,
-    rwRASTERTYPECAMERA = 0x02,
-    rwRASTERTYPETEXTURE = 0x04,
-    rwRASTERTYPECAMERATEXTURE = 0x05,
-    rwRASTERTYPEMASK = 0x07,
-    rwRASTERPALETTEVOLATILE = 0x40,
-    rwRASTERDONTALLOCATE = 0x80,
-    rwRASTERTYPEFORCEENUMSIZEINT = ((int32_t)((~((uint32_t)0)) >> 1))
-};
-
-struct IDirectInputDeviceA;
-struct IDirectInputA;
-struct IDirect3DSwapChain8;
-
-struct GameDxInput
-{
-    unsigned char __pad00[24];
-    IDirectInputA* pInput;
-    IDirectInputDeviceA* pInputDevice;
-    unsigned char __pad04[8];
 };
 
 typedef float RwReal;
@@ -268,11 +229,6 @@ static inline bool IsCursorInClientRect(HWND wnd)
     ClientToScreen(wnd, (LPPOINT)&rect.right); // right & bottom
 
     return PtInRect(&rect, pos);
-}
-
-static inline bool IsKeyDown(int keyCode)
-{
-    return GetAsyncKeyState(keyCode) & 0x8000;
 }
 
 static inline std::string StringPrintf(const char* format, ...)

@@ -4,31 +4,50 @@ module;
 
 module WindowedMode;
 
-namespace
+void WindowedMode::InstallRenderHooks()
 {
-    struct DeviceMethods
+    static std::vector<SafetyHookMid> hooks;
+    if (!hooks.empty()) return;
+    std::vector<SafetyHookMid> pending;
+    auto add = [&pending](uintptr_t address, safetyhook::MidHookFn callback)
     {
-        decltype(WindowedMode::D3dResetHook)* reset;
-        decltype(WindowedMode::D3dPresentHook)* present;
+        auto hook = safetyhook::create_mid(reinterpret_cast<void*>(address), callback);
+        if (!hook) throw std::runtime_error("Could not hook a RenderWare device call.");
+        pending.push_back(std::move(hook));
     };
-    std::map<uintptr_t*, DeviceMethods> deviceMethods;
-}
-
-void WindowedMode::InitD3dDevice()
-{
-    if (!d3dDevice) return;
-    auto table = *reinterpret_cast<uintptr_t**>(d3dDevice);
-    if (deviceMethods.contains(table)) return;
-
-    const auto resetIndex = IsD3D9() ? 16 : 14;
-    DWORD protection;
-    if (!VirtualProtect(table + resetIndex, 2 * sizeof(uintptr_t), PAGE_READWRITE, &protection)) return;
-    deviceMethods.emplace(table, DeviceMethods{
-        reinterpret_cast<decltype(D3dResetHook)*>(table[resetIndex]),
-        reinterpret_cast<decltype(D3dPresentHook)*>(table[resetIndex + 1]) });
-    table[resetIndex] = reinterpret_cast<uintptr_t>(&D3dResetHook);
-    table[resetIndex + 1] = reinterpret_cast<uintptr_t>(&D3dPresentHook);
-    VirtualProtect(table + resetIndex, 2 * sizeof(uintptr_t), protection, &protection);
+    for (auto address : bindings.beforeCreateDevice)
+        add(address, [](SafetyHookContext&) { inst->InitPresentationParameters(); });
+    for (auto address : bindings.afterCreateDevice)
+        add(address, [](SafetyHookContext& regs)
+        {
+            if (SUCCEEDED(static_cast<HRESULT>(regs.eax)))
+            {
+                inst->d3dDevice = *inst->bindings.device;
+                inst->postEffectUpdatePending = false;
+            }
+        });
+    for (auto address : bindings.beforeReset)
+        add(address, [](SafetyHookContext&) { inst->BeforeReset(); });
+    for (auto completion : bindings.resetCompletions)
+    {
+        switch (completion.result)
+        {
+        case ResetResult::Eax:
+            add(completion.address, [](SafetyHookContext& regs) { inst->AfterReset(static_cast<HRESULT>(regs.eax)); });
+            break;
+        case ResetResult::Ebx:
+            add(completion.address, [](SafetyHookContext& regs) { inst->AfterReset(static_cast<HRESULT>(regs.ebx)); });
+            break;
+        case ResetResult::Esi:
+            add(completion.address, [](SafetyHookContext& regs) { inst->AfterReset(static_cast<HRESULT>(regs.esi)); });
+            break;
+        case ResetResult::Stack16:
+            add(completion.address, [](SafetyHookContext& regs) { inst->AfterReset(*reinterpret_cast<HRESULT*>(regs.esp + 16)); });
+            break;
+        }
+    }
+    add(bindings.beforePresent, [](SafetyHookContext&) { inst->BeforePresent(); });
+    hooks = std::move(pending);
 }
 
 void WindowedMode::InitPresentationParameters()
@@ -79,61 +98,50 @@ bool WindowedMode::IsD3D9() const
     return gameTitle == GameTitle::GTASA;
 }
 
-HRESULT WindowedMode::D3dPresentHook(IDirect3DDevice8* self, const RECT* srcRect, const RECT* dstRect, HWND wnd, const RGNDATA* region)
+void WindowedMode::BeforePresent()
 {
-    auto original = deviceMethods.at(*reinterpret_cast<uintptr_t**>(self)).present;
-    if (!inst || self != inst->d3dDevice)
-        return original(self, srcRect, dstRect, wnd, region);
-    // Reset returns before RW restores its rasters. Present is the first hooked
-    // point at which those resources and the camera dimensions are valid again.
-    if (inst->postEffectUpdatePending && SUCCEEDED(self->TestCooperativeLevel()))
+    // RenderWare has restored its rasters before reaching this call site.
+    if (postEffectUpdatePending && d3dDevice && SUCCEEDED(d3dDevice->TestCooperativeLevel()))
     {
-        inst->postEffectUpdatePending = false;
-        inst->UpdatePostEffect();
+        postEffectUpdatePending = false;
+        UpdatePostEffect();
     }
-    inst->MouseUpdate();
-
-    if (inst->fpsCounter.update())
-        inst->WindowUpdateTitle();
-
-    return original(self, srcRect, dstRect, wnd, region);
+    MouseUpdate();
+    if (fpsCounter.update()) WindowUpdateTitle();
 }
 
-HRESULT WindowedMode::D3dResetHook(IDirect3DDevice8* self, D3DPRESENT_PARAMETERS* parameters)
+void WindowedMode::BeforeReset()
 {
-    auto original = deviceMethods.at(*reinterpret_cast<uintptr_t**>(self)).reset;
-    if (!inst || self != inst->d3dDevice) return original(self, parameters);
-    if (!parameters || inst->resetInProgress) return D3DERR_INVALIDCALL;
-    inst->resetInProgress = true;
-    inst->postEffectUpdatePending = false;
-    // Preserve the caller's structure, including AA/depth settings and rollback
-    // sizes. D3D8 and D3D9 have different layouts after MultiSampleType.
-    // Zero dimensions mean the current client size, not a menu request.
-    auto reset = [self, original](auto& caller) {
-        auto effective = caller;
-        RECT client = {};
-        GetClientRect(inst->window, &client);
-        if (!effective.BackBufferWidth) effective.BackBufferWidth = client.right;
-        if (!effective.BackBufferHeight) effective.BackBufferHeight = client.bottom;
-        if (!effective.BackBufferWidth || !effective.BackBufferHeight) return D3DERR_INVALIDCALL;
-        effective.Windowed = TRUE;
-        effective.hDeviceWindow = inst->window;
-        effective.SwapEffect = D3DSWAPEFFECT_DISCARD;
-        effective.FullScreen_RefreshRateInHz = 0;
-        if (!inst->IsD3D9()) effective.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-        // Some runtimes clear the dimensions/count/format in this in/out argument.
-        // RW reads them after Reset, so retain the effective values on success.
-        auto driverParameters = effective;
-        const auto result = original(self, reinterpret_cast<D3DPRESENT_PARAMETERS*>(&driverParameters));
-        if (SUCCEEDED(result)) caller = effective;
-        return result;
+    resetInProgress = true;
+    postEffectUpdatePending = false;
+    const auto size = IsD3D9() ? sizeof(D3DPRESENT_PARAMETERS_D3D9) : sizeof(D3DPRESENT_PARAMETERS);
+    memcpy(resetSaved.data(), d3dPresentParams8, size);
+    auto prepare = [this](auto& parameters)
+    {
+        RECT client{};
+        GetClientRect(window, &client);
+        if (!parameters.BackBufferWidth) parameters.BackBufferWidth = client.right;
+        if (!parameters.BackBufferHeight) parameters.BackBufferHeight = client.bottom;
+        parameters.Windowed = TRUE;
+        parameters.hDeviceWindow = window;
+        parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+        parameters.FullScreen_RefreshRateInHz = 0;
+        if (!IsD3D9()) parameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
     };
-    const auto result = inst->IsD3D9()
-        ? reset(*reinterpret_cast<D3DPRESENT_PARAMETERS_D3D9*>(parameters))
-        : reset(*parameters);
-    inst->resetInProgress = false;
-    inst->postEffectUpdatePending = SUCCEEDED(result);
-    return result;
+    if (IsD3D9()) prepare(*d3dPresentParams9);
+    else prepare(*d3dPresentParams8);
+    memcpy(resetEffective.data(), d3dPresentParams8, size);
+}
+
+void WindowedMode::AfterReset(HRESULT result)
+{
+    if (!resetInProgress) return;
+    // Some drivers clear in/out dimensions. Keep effective values on success,
+    // and restore the original request on failure for RenderWare's retry path.
+    const auto size = IsD3D9() ? sizeof(D3DPRESENT_PARAMETERS_D3D9) : sizeof(D3DPRESENT_PARAMETERS);
+    memcpy(d3dPresentParams8, SUCCEEDED(result) ? resetEffective.data() : resetSaved.data(), size);
+    resetInProgress = false;
+    postEffectUpdatePending = SUCCEEDED(result);
 }
 
 void WindowedMode::UpdatePostEffect()
@@ -149,8 +157,8 @@ void WindowedMode::UpdatePostEffect()
 void WindowedMode::UpdateWidescreenFix()
 {
     // Retry discovery: ASI load order is not fixed.
-    const char* name = gameTitle == GTA_3 ? "GTA3.WidescreenFix.asi" :
-        gameTitle == GTA_VC ? "GTAVC.WidescreenFix.asi" : "GTASA.WidescreenFix.asi";
+    const char* name = gameTitle == GameTitle::GTA3 ? "GTA3.WidescreenFix.asi" :
+        gameTitle == GameTitle::GTAVC ? "GTAVC.WidescreenFix.asi" : "GTASA.WidescreenFix.asi";
     if (auto module = GetModuleHandleA(name))
         if (auto update = reinterpret_cast<void(__cdecl*)()>(GetProcAddress(module, "UpdateVars")))
             update();

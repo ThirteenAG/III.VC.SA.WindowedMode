@@ -5,15 +5,50 @@ newoption {
 }
 
 
-function setupDebugger(gameAbbr, gameExeName)
-    postbuildcommands { "\
-if defined GTA_" .. gameAbbr .. "_DIR ( \r\n\
-taskkill /IM " .. gameExeName .. " /F /FI \"STATUS eq RUNNING\" \r\n\
-xcopy /Y \"$(TargetPath)\" \"$(GTA_" .. gameAbbr .. "_DIR)\\scripts\" \r\n\
-)" }
+-- The folder a project is deployed to, and the game it is started from when debugging,
+-- is the path of one machine and does not belong in the repository. It is read from a
+-- `.env` file next to this script, which is not tracked by git and holds one
+-- `<KEY>=<folder>` line per game (quotes and a trailing slash are optional). A project
+-- whose key is missing is not deployed at all.
+local envkeys = nil
+function envdir(key)
+   if not envkeys then
+      envkeys = {}
+      local text = io.readfile(path.join(_SCRIPT_DIR, ".env")) or ""
+      for line in text:gmatch("[^\r\n]+") do
+         local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+         if k and v ~= "" then
+            v = v:gsub('^"', ""):gsub('"$', ""):gsub("^'", ""):gsub("'$", "")
+            envkeys[k] = v
+         end
+      end
+   end
 
-    debugcommand ("$(GTA_" .. gameAbbr .. "_DIR)\\" .. gameExeName)
-    debugdir ("$(GTA_" .. gameAbbr .. "_DIR)")
+   local value = envkeys[key]
+   if not value then return nil end
+
+   value = value:gsub("[%s\\/]+$", "")
+   if value == "" then return nil end
+
+   return path.translate(value)
+end
+
+-- Deploys the built .asi into the script folder of the game that `key` names in the .env
+-- file, and starts the game from there when debugging. Only a plugin that is already
+-- installed in the game folder is replaced, a folder without one is left alone.
+function setpaths(key, exepath, scriptspath)
+   scriptspath = scriptspath or "scripts/"
+   local gamepath = envdir(key)
+   if gamepath then
+      local target = gamepath .. "\\" .. path.translate(scriptspath)
+      postbuildcommands {
+         "if exist \"" .. target .. "$(TargetFileName)\" copy /y \"$(TargetPath)\" \"" .. target .. "\"",
+      }
+      debugdir (gamepath)
+      if (exepath) then
+         debugcommand (gamepath .. "\\" .. path.translate(exepath))
+      end
+   end
 end
 
 workspace "III.VC.SA.WindowedMode"
@@ -92,17 +127,17 @@ project "III.VC.SA.WindowedMode"
    filter "configurations:Gta3"
       defines { "DEBUG" }
       symbols "on"
-      setupDebugger("III", "gta3.exe")
+      setpaths("GTAIII_DIR", "gta3.exe")
       
    filter "configurations:GtaVC"
       defines { "DEBUG" }
       symbols "on"
-      setupDebugger("VC", "gta-vc.exe")
+      setpaths("GRAND_THEFT_AUTO_VICE_CITY_DIR", "gta-vc.exe")
       
    filter "configurations:GtaSA"
       defines { "DEBUG" }
       symbols "on"
-      setupDebugger("SA", "gta_sa.exe")
+      setpaths("GTA_SAN_ANDREAS_DIR", "gta_sa.exe")
 
    filter "configurations:Release"
       defines { "NDEBUG" }

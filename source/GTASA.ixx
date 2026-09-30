@@ -23,6 +23,13 @@ export GameBindings ResolveGTASA()
     game.setupBackBuffer = reinterpret_cast<decltype(game.setupBackBuffer)>(CallTarget(mode + 13));
     game.camera = ReadOperand<RwCamera**>(mode, 19);
     game.deviceDialog = FindPattern("BF 01 00 00 00 3B C7 7E ? A1 ? ? ? ? 85 C0 89 3D ? ? ? ? 75 ? 6A 00 68 ? ? ? ?") + 7;
-    game.mouseRecenter = FindPattern("D9 5C 24 08 E8 ? ? ? ? 83 C4 04 E8 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? B9 ? ? ? ? E8") + 4;
+    // Anchor on the mouse coordinates, not the following rendering calls: other
+    // ASIs can replace those calls independently of mouse centering.
+    auto mouse = FindPattern("DB 05 ? ? ? ? 8D 44 24 00 50 D8 0D ? ? ? ? D9 5C 24 04 DB 05 ? ? ? ? D8 0D ? ? ? ? D9 5C 24 08");
+    auto call = reinterpret_cast<const uint8_t*>(mouse + 37);
+    if (call[0] == 0xE8)
+        game.mouseRecenter = mouse + 37;
+    else if (!std::all_of(call, call + 5, [](uint8_t byte) { return byte == 0x90; }))
+        throw std::runtime_error("The mouse-centering call has an unsupported modification.");
     return game;
 }

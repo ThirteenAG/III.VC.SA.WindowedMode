@@ -28,6 +28,16 @@ Settings are stored beside the plugin in **III.VC.SA.WindowedMode.ini**. Window 
 ## Building
 Run `premake5.bat`, then build the generated solution in `build` with Visual Studio 2026 or newer, using **Release / Win32**. Initialize the Git submodules first. The project uses C++ modules; game-specific patterns are in `GTA3.ixx`, `GTAVC.ixx` and `GTASA.ixx`.
 
+For local deployment and debugging, create `.env` beside `premake5.lua`, then rerun `premake5.bat`:
+
+```ini
+GTAIII_DIR=Z:\WFP\Games\Grand Theft Auto\GTAIII
+GRAND_THEFT_AUTO_VICE_CITY_DIR=Z:\WFP\Games\Grand Theft Auto\Grand Theft Auto Vice City
+GTA_SAN_ANDREAS_DIR=Z:\WFP\Games\Grand Theft Auto\GTA San Andreas
+```
+
+The `Gta3`, `GtaVC` and `GtaSA` configurations use the corresponding path for debugging and copy the built ASI into that game's `scripts` folder only if the plugin is already installed. Quotes and trailing slashes are supported. Missing keys disable deployment and debugger paths for that game. `Release` remains independent of local game paths. The `.env` file is ignored by Git.
+
 For a versioned build, run `premake5.exe vs2026 --with-version=2.2.0` before building. Without an explicit version, the build uses the current date and time. The product version also includes the Git commit hash.
 
 Run `data/release.bat` after a Release build to embed the PDB, optionally sign the ASI, and package it with the INI and documentation. Signing uses a base64-encoded PFX in `CODE_SIGNING_PFX` and its password in `CODE_SIGNING_PASSWORD`; when neither credential is configured, ordinary builds remain unsigned. Embedding runs before signing.

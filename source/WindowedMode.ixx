@@ -11,9 +11,6 @@ public:
     static constexpr POINT Resolution_Min = { Resolution_Default.x / 4, Resolution_Default.y / 4 };
 
     using GameTitle = ::GameTitle;
-    static constexpr auto GTA_3 = GameTitle::GTA3;
-    static constexpr auto GTA_VC = GameTitle::GTAVC;
-    static constexpr auto GTA_SA = GameTitle::GTASA;
 
     // game internals
     const GameBindings bindings;
@@ -35,7 +32,11 @@ public:
     explicit WindowedMode(const GameBindings& bindings);
 
     static HWND __stdcall InitWindow(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam);
-    void InitD3dDevice(); // install hooks
+    void InstallRenderHooks();
+    void BeforeReset();
+    void AfterReset(HRESULT result);
+    void BeforePresent();
+    std::array<uint8_t, sizeof(D3DPRESENT_PARAMETERS_D3D9)> resetSaved{}, resetEffective{};
 
     // config file
     CIniReader config;
@@ -93,10 +94,6 @@ public:
     
     // DirectX 3D related stuff
     bool IsD3D9() const;
-
-    HRESULT static __stdcall D3dPresentHook(IDirect3DDevice8* self, const RECT* srcRect, const RECT* dstRect, HWND wnd, const RGNDATA* region);
-
-    HRESULT static __stdcall D3dResetHook(IDirect3DDevice8* self, D3DPRESENT_PARAMETERS* parameters);
 
     // other
     FpsCounter fpsCounter;

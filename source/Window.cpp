@@ -9,7 +9,7 @@ module WindowedMode;
 
 WindowedMode::WindowedMode(const GameBindings& resolved) :
     bindings(resolved), gameTitle(resolved.title), gameState(*resolved.state),
-    rsGlobal(resolved.globals), d3dPresentParams8(nullptr), rwVideoModes(resolved.modes),
+    rsGlobal(resolved.globals), d3dPresentParams8(resolved.presentParameters), rwVideoModes(resolved.modes),
     RwEngineGetNumVideoModes(resolved.getNumVideoModes),
     RwEngineGetCurrentVideoMode(resolved.getCurrentVideoMode)
 {}
@@ -24,9 +24,15 @@ const WindowedMode::AspectRatioInfo WindowedMode::AspectRatios[] = {
     { "16:10", 16.0f / 10.0f }
 };
 
-HWND __stdcall WindowedMode::InitWindow(DWORD exStyle, LPCSTR className, LPCSTR title, DWORD style,
-    int x, int y, int width, int height, HWND parent, HMENU menu, HINSTANCE module, LPVOID param)
+HWND __stdcall WindowedMode::InitWindow(DWORD, LPCSTR className, LPCSTR title, DWORD,
+    int, int, int, int, HWND parent, HMENU menu, HINSTANCE module, LPVOID param)
 {
+    try { inst->InstallRenderHooks(); }
+    catch (const std::exception& error)
+    {
+        ShowError("%s", error.what());
+        return nullptr;
+    }
     inst->InitConfig();
     const bool maximize = inst->LoadConfig();
     const bool center = inst->windowPos.x == -1 || inst->windowPos.y == -1;
@@ -36,9 +42,9 @@ HWND __stdcall WindowedMode::InitWindow(DWORD exStyle, LPCSTR className, LPCSTR 
         parent, menu, module, param);
     if (!inst->window) return nullptr;
 
-    // Use a Unicode subclass consistently. USER32 converts messages when
-    // CallWindowProcW forwards to the game's original ANSI procedure.
-    inst->oriWindowProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(inst->window,
+    // Keep the game's ANSI window procedure chain. Switching it to Unicode
+    // gives ANSI subclasses a conversion token that some mods call directly.
+    inst->oriWindowProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(inst->window,
         GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&WindowProc)));
     if (maximize && inst->windowMode != Fullscreen)
         ShowWindow(inst->window, SW_MAXIMIZE);
@@ -183,7 +189,7 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
     // In particular, WM_SIZE can be dispatched synchronously from inside Reset.
     windowUpdating = false;
     if (resizeWindow && window && d3dDevice && !resetInProgress)
-        CallWindowProcW(oriWindowProc, window, WM_SIZE, SIZE_RESTORED,
+        CallWindowProcA(oriWindowProc, window, WM_SIZE, SIZE_RESTORED,
             MAKELPARAM(windowSizeClient.x, windowSizeClient.y));
 }
 
@@ -270,25 +276,25 @@ void WindowedMode::WindowUpdateTitle()
 LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (msg == WM_NCCREATE) inst->window = wnd;
-    // Caption messages belong to this Unicode subclass. Do not pass their text
-    // buffers through game/mod procedures that may assume a different encoding.
+    // Handle caption buffers in the same ANSI encoding as CreateWindowExA
+    // and SetWindowTextA.
     if (msg == WM_SETTEXT || msg == WM_GETTEXT || msg == WM_GETTEXTLENGTH)
-        return DefWindowProcW(wnd, msg, wParam, lParam);
+        return DefWindowProcA(wnd, msg, wParam, lParam);
     // The original games send this malformed notification after a camera resize
     // fails while maximized. Neither our handler nor DefWindowProc can consume it.
     if (msg == WM_WINDOWPOSCHANGED && !lParam) return 0;
     // Reset can synchronously dispatch activation and position messages as well
     // as WM_SIZE. Never re-enter game/rendering code through those callbacks.
     if (inst->resetInProgress && msg != WM_STYLECHANGING)
-        return DefWindowProcW(wnd, msg, wParam, lParam);
+        return DefWindowProcA(wnd, msg, wParam, lParam);
     switch (msg)
     {
         // window focus/defocus
         case WM_ACTIVATE:
         {
             auto result = (LOWORD(wParam) == WA_INACTIVE) ?
-                DefWindowProcW(wnd, msg, wParam, lParam) : // don't pause game on defocus
-                CallWindowProcW(inst->oriWindowProc, wnd, msg, wParam, lParam);
+                DefWindowProcA(wnd, msg, wParam, lParam) : // don't pause game on defocus
+                CallWindowProcA(inst->oriWindowProc, wnd, msg, wParam, lParam);
 
             // handle automatic pause/resume
             if (inst->gameState == Playing_Game)
@@ -332,18 +338,18 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
         case WM_SETFOCUS:
         case WM_KILLFOCUS:
             inst->enterShortcutDown = false;
-            return DefWindowProcW(wnd, msg, wParam, lParam);
+            return DefWindowProcA(wnd, msg, wParam, lParam);
         
         // restore proper handling of ShowCursor
         case WM_SETCURSOR:
-            return DefWindowProcW(wnd, msg, wParam, lParam);
+            return DefWindowProcA(wnd, msg, wParam, lParam);
 
         // do not send keyboard events to the inactive window
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
         {
             if (!HasFocus(wnd))
-                return DefWindowProcW(wnd, msg, wParam, lParam); // bypass the game
+                return DefWindowProcA(wnd, msg, wParam, lParam); // bypass the game
             
             // handle Alt+Enter and Ctrl+Enter key combinations
             const bool alt = (lParam & (1L << 29)) != 0;
@@ -398,7 +404,7 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 
             if (!hasFocus || !inClient)
             {
-                return DefWindowProcW(wnd, msg, wParam, lParam); // bypass the game
+                return DefWindowProcA(wnd, msg, wParam, lParam); // bypass the game
             }
             break;
         }
@@ -498,14 +504,14 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
         case WM_SIZE:
             if (!inst->windowUpdating && !inst->resetInProgress && !inst->sizing &&
                 wParam != SIZE_MINIMIZED && wParam != SIZE_MAXHIDE && LOWORD(lParam) && HIWORD(lParam))
-                CallWindowProcW(inst->oriWindowProc, wnd, msg, wParam, lParam); // inform the game
-            return DefWindowProcW(wnd, msg, wParam, lParam); // call default as otherwise maximization will not work correctly on later Windows versions
+                CallWindowProcA(inst->oriWindowProc, wnd, msg, wParam, lParam); // inform the game
+            return DefWindowProcA(wnd, msg, wParam, lParam); // call default as otherwise maximization will not work correctly on later Windows versions
 
         // position or size changed
         case WM_WINDOWPOSCHANGED:
         {
             if (inst->windowUpdating || inst->resetInProgress || IsIconic(wnd))
-                return DefWindowProcW(wnd, msg, wParam, lParam);
+                return DefWindowProcA(wnd, msg, wParam, lParam);
 
             bool updated = false;
             auto info = (WINDOWPOS*)lParam;
@@ -535,7 +541,7 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
             {
                 RECT client;
                 if (!GetClientRect(wnd, &client) || client.right <= 0 || client.bottom <= 0)
-                    return DefWindowProcW(wnd, msg, wParam, lParam);
+                    return DefWindowProcA(wnd, msg, wParam, lParam);
                 inst->windowSizeClient = { client.right, client.bottom };
                 if (inst->windowMode != WindowMode::Fullscreen && !IsZoomed(wnd))
                 {
@@ -549,11 +555,11 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 
             // DefWindowProc generates WM_SIZE/WM_MOVE. The game's handler must not
             // run a second time or resize the camera while a Reset is in progress.
-            return DefWindowProcW(wnd, msg, wParam, lParam);
+            return DefWindowProcA(wnd, msg, wParam, lParam);
         }
     }
 
-    return CallWindowProcW(inst->oriWindowProc, wnd, msg, wParam, lParam);
+    return CallWindowProcA(inst->oriWindowProc, wnd, msg, wParam, lParam);
 }
 
 POINT WindowedMode::SizeFromClient(POINT clientSize) const

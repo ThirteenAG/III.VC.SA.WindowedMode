@@ -284,3 +284,6 @@ __pycache__/
 # Cake - Uncomment if you are using it
 # tools/**
 # !tools/packages.config
+
+# Local game deployment paths
+/.env

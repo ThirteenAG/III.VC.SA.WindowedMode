@@ -3,6 +3,13 @@
 
 enum class GameTitle { GTA3, GTAVC, GTASA };
 
+enum class ResetResult { Eax, Ebx, Esi, Stack16 };
+struct ResetCompletion
+{
+    uintptr_t address;
+    ResetResult result;
+};
+
 struct GameBindings
 {
     GameTitle title{};
@@ -21,6 +28,12 @@ struct GameBindings
     void (*setupBackBuffer)() = nullptr;
     void (*selectVideoMode)(DWORD) = nullptr;
     int (*changeVideoMode)(DWORD) = nullptr;
+    IDirect3DDevice8** device = nullptr;
+    D3DPRESENT_PARAMETERS* presentParameters = nullptr;
+    std::vector<uintptr_t> beforeCreateDevice, afterCreateDevice;
+    std::vector<uintptr_t> beforeReset;
+    std::vector<ResetCompletion> resetCompletions;
+    uintptr_t beforePresent = 0;
     uintptr_t menuResolutionCall = 0;
     uintptr_t changeVideoModeCall = 0;
     uintptr_t resolutionColor = 0;
@@ -62,4 +75,79 @@ inline uintptr_t CallTarget(uintptr_t call)
     if (*reinterpret_cast<uint8_t*>(call) != 0xE8)
         throw std::runtime_error("Expected a relative call at the resolved hook site.");
     return call + 5 + ReadOperand<int32_t>(call, 1);
+}
+
+inline void ResolveD3DCalls(GameBindings& game)
+{
+    auto collect = [](std::string_view bytes, size_t count, ptrdiff_t before, ptrdiff_t after,
+        std::vector<uintptr_t>& beforeCalls, std::vector<uintptr_t>& afterCalls, size_t afterEvery = 1)
+    {
+        auto pattern = hook::pattern(bytes);
+        if (pattern.size() != count)
+            throw std::runtime_error("Missing or ambiguous RenderWare calls: " + std::string(bytes));
+        for (size_t i = 0; i < count; ++i)
+        {
+            auto address = reinterpret_cast<uintptr_t>(pattern.get(i).get<void>());
+            beforeCalls.push_back(address + before);
+            if ((i + 1) % afterEvery == 0) afterCalls.push_back(address + after);
+        }
+        return reinterpret_cast<uintptr_t>(pattern.get(0).get<void>());
+    };
+    std::vector<uintptr_t> afterReset;
+    const bool sa = game.title == GameTitle::GTASA;
+    const bool alternate = game.title == GameTitle::GTA3 &&
+        !hook::pattern("C7 44 24 10 ? ? ? ? 8B 12 FF 52 3C").empty();
+    uintptr_t reset;
+    if (alternate)
+    {
+        // Each group of three CreateDevice attempts joins after its last call.
+        // Hooking the earlier short jumps would overwrite another branch's entry.
+        auto create = collect("C7 44 24 10 ? ? ? ? 8B 12 FF 52 3C", 6, 8, 13,
+            game.beforeCreateDevice, game.afterCreateDevice, 3);
+        reset = collect("8B 10 89 04 24 FF 52 38", 8, 0, 8,
+            game.beforeReset, afterReset);
+        game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(create, -8);
+        game.device = ReadOperand<IDirect3DDevice8**>(create, -19);
+        game.beforePresent = FindPattern("8B 02 89 14 24 FF 50 3C 8B D8");
+    }
+    else if (sa)
+    {
+        collect("50 51 FF 52 40 85 C0 7D", 1, 0, 5, game.beforeCreateDevice, game.afterCreateDevice);
+        reset = collect("A1 ? ? ? ? ? ? ? ? ? 50 8B ? FF ? 40", 10, 10, 16, game.beforeReset, afterReset);
+        auto parameters = collect("68 ? ? ? ? 8B ? 50 FF ? 40", 2, 5, 11, game.beforeReset, afterReset);
+        collect("8B ? 68 ? ? ? ? 50 FF ? 40", 4, 2, 11, game.beforeReset, afterReset);
+        game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(parameters, 1);
+        game.device = ReadOperand<IDirect3DDevice8**>(reset, 1);
+        game.beforePresent = FindPattern("50 8B 10 FF 52 44 8B D8 81 FB 68 08 76 88");
+    }
+    else
+    {
+        collect("52 50 FF 51 3C 3B C5 7D", 1, 0, 5, game.beforeCreateDevice, game.afterCreateDevice);
+        reset = collect("A1 ? ? ? ? ? ? ? ? ? 50 8B ? FF ? 38", game.title == GameTitle::GTA3 ? 8 : 6,
+            10, 16, game.beforeReset, afterReset);
+        auto parameters = collect("68 ? ? ? ? 8B ? 50 FF ? 38", 2, 5, 11, game.beforeReset, afterReset);
+        game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(parameters, 1);
+        game.device = ReadOperand<IDirect3DDevice8**>(reset, 1);
+        game.beforePresent = FindPattern("50 8B ? FF ? 3C 3D 68 08 76 88");
+    }
+
+    for (auto address : afterReset)
+    {
+        auto code = reinterpret_cast<const uint8_t*>(address);
+        auto result = ResetResult::Eax;
+        // Retry paths join just after the instruction saving HRESULT. Leave
+        // that branch target intact, and read the saved result at the join.
+        if (code[0] == 0x89 && code[1] == 0x44 && code[2] == 0x24 && code[3] == 0x10)
+        {
+            address += 4;
+            result = ResetResult::Stack16;
+        }
+        else if (code[0] == 0x8B && (code[1] == 0xD8 || code[1] == 0xF0))
+        {
+            address += 2;
+            result = code[1] == 0xD8 ? ResetResult::Ebx : ResetResult::Esi;
+        }
+        game.resetCompletions.push_back({ address, result });
+    }
+
 }
