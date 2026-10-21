@@ -1,9 +1,9 @@
-[submodule "external/IniReader"]
-	path = external/IniReader
-	url = https://github.com/ThirteenAG/IniReader
 [submodule "external/injector"]
 	path = external/injector
 	url = https://github.com/ThirteenAG/injector
 [submodule "external/hooking"]
 	path = external/hooking
 	url = https://github.com/ThirteenAG/Hooking.Patterns
+[submodule "external/FusionFixUtils"]
+	path = external/FusionFixUtils
+	url = https://github.com/ThirteenAG/FusionFixUtils

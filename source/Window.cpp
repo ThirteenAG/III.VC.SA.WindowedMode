@@ -1,11 +1,31 @@
 module;
 #include "stdafx.h"
 #include "Bindings.h"
+#include "Settings.h"
+#include <WindowStyle.hpp>
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "winmm.lib")
 
 module WindowedMode;
+
+namespace
+{
+    // The DPI of a monitor (the system's before Windows 8.1)
+    UINT MonitorDpi(HMONITOR monitor)
+    {
+        using GetDpiForMonitorFn = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
+        static auto getDpiForMonitor = []() -> GetDpiForMonitorFn
+        {
+            auto shcore = LoadLibraryExW(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+            return shcore ? reinterpret_cast<GetDpiForMonitorFn>(GetProcAddress(shcore, "GetDpiForMonitor")) : nullptr;
+        }();
+        UINT x = 0, y = 0;
+        if (getDpiForMonitor && SUCCEEDED(getDpiForMonitor(monitor, 0, &x, &y)) && x)
+            return x;
+        return ::WindowStyle::DpiOf(nullptr);
+    }
+}
 
 WindowedMode::WindowedMode(const GameBindings& resolved) :
     bindings(resolved), gameTitle(resolved.title), gameState(*resolved.state),
@@ -27,34 +47,46 @@ const WindowedMode::AspectRatioInfo WindowedMode::AspectRatios[] = {
 HWND __stdcall WindowedMode::InitWindow(DWORD, LPCSTR className, LPCSTR title, DWORD,
     int, int, int, int, HWND parent, HMENU menu, HINSTANCE module, LPVOID param)
 {
-    try { inst->InstallRenderHooks(); }
+    try
+    {
+        inst->InstallRenderHooks();
+    }
     catch (const std::exception& error)
     {
         ShowError("%s", error.what());
         return nullptr;
     }
-    inst->InitConfig();
-    const bool maximize = inst->LoadConfig();
-    const bool center = inst->windowPos.x == -1 || inst->windowPos.y == -1;
-    inst->WindowCalculateGeometry(center);
+    inst->LoadConfig();
+
+    // The monitor the window was on last time, the primary one at first
+    auto monitor = inst->windowMonitorPoint.x == -1 && inst->windowMonitorPoint.y == -1 ?
+        MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY) : MonitorFromPoint(inst->windowMonitorPoint, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO info{ sizeof(info) };
+    GetMonitorInfo(monitor, &info);
+    auto client = inst->DesiredClientSize(info.rcMonitor);
+    auto frame = ::WindowStyle::FrameOf(inst->WindowStyle(), inst->WindowStyleEx(), MonitorDpi(monitor));
+    auto rect = ::WindowStyle::WindowRect(info.rcMonitor, client.x, client.y, frame);
+    inst->windowPos = { rect.left, rect.top };
+    inst->windowSize = { rect.right - rect.left, rect.bottom - rect.top };
+    inst->windowSizeClient = client;
+
     inst->window = createWindow(inst->WindowStyleEx(), className, title, inst->WindowStyle(),
         inst->windowPos.x, inst->windowPos.y, inst->windowSize.x, inst->windowSize.y,
         parent, menu, module, param);
-    if (!inst->window) return nullptr;
+    if (!inst->window)
+        return nullptr;
 
     // Keep the game's ANSI window procedure chain. Switching it to Unicode
     // gives ANSI subclasses a conversion token that some mods call directly.
     inst->oriWindowProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(inst->window,
         GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&WindowProc)));
-    if (maximize && inst->windowMode != Fullscreen)
+    inst->WindowCalculateGeometry(true, monitor);
+    if (inst->windowMaximized && inst->windowMode == Windowed)
         ShowWindow(inst->window, SW_MAXIMIZE);
-    else
-        inst->WindowCalculateGeometry(center, true);
     inst->WindowUpdateTitle();
     UpdateWindow(inst->window);
     return inst->window;
 }
-
 int WindowedMode::FindAspectRatio(POINT resolution, float threshold)
 {
     auto ratio = float(resolution.x) / resolution.y;
@@ -87,79 +119,52 @@ DWORD WindowedMode::WindowStyleEx() const
     return 0;
 }
 
-void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
+HMONITOR WindowedMode::CurrentMonitor() const
 {
-    if (windowUpdating) return;
+    return MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+}
+
+// The client size the mode wants on a monitor: the monitor's size in Borderless, the chosen size in Windowed
+POINT WindowedMode::DesiredClientSize(const RECT& monitor) const
+{
+    POINT desktop = { monitor.right - monitor.left, monitor.bottom - monitor.top };
+    if (windowMode == WindowMode::Borderless || windowSizeWindowed.x <= 0 || windowSizeWindowed.y <= 0)
+        return desktop;
+    return windowSizeWindowed;
+}
+
+void WindowedMode::WindowCalculateGeometry(bool resizeWindow, HMONITOR monitor)
+{
+    if (windowUpdating)
+        return;
     windowUpdating = true;
 
-    POINT windowCenter = { windowPos.x + windowSize.x / 2, windowPos.y + windowSize.y / 2};
-    auto monitorRect = GetMonitorRect(windowCenter);
-    auto monitorWidth = monitorRect.right - monitorRect.left;
-    auto monitorHeight = monitorRect.bottom - monitorRect.top;
-    bool monitorSingle = GetSystemMetrics(SM_CMONITORS) <= 1;
-
-    // size
-    if (windowMode == WindowMode::Fullscreen)
+    // apply to the window: centered on its monitor; at the monitor's size the client area covers it and a frame lies
+    // outside the screen
+    if (resizeWindow && window && !IsZoomed(window))
     {
-        windowPos.x = monitorRect.left;
-        windowPos.y = monitorRect.top;
-        windowSize.x = windowSizeClient.x = monitorWidth;
-        windowSize.y = windowSizeClient.y = monitorHeight;
-    }
-    else if (!IsZoomed(window)) // not maximized windowed modes
-    {
-        windowSize = SizeFromClient(windowSizeWindowed);
-
-        if (monitorSingle) // limit window size to desktop
-        {
-            windowSize.x = min(windowSize.x, monitorWidth);
-            windowSize.y = min(windowSize.y, monitorHeight);
-        }
-
-        windowSizeClient = windowSizeWindowed = ClientFromSize(windowSize);
-
-        // window position
-        if (center)
-        {
-            windowPosWindowed.x = monitorRect.left + (monitorWidth - windowSize.x) / 2;
-            windowPosWindowed.y = monitorRect.top + (monitorHeight - windowSize.y) / 2;
-        }
-        
-        if (monitorSingle) // keep entire window on the screen
-        {
-            windowPosWindowed.x = max(windowPosWindowed.x, monitorRect.left);
-            if (windowPosWindowed.x + windowSize.x > monitorRect.right)
-            {
-                windowPosWindowed.x = monitorRect.right - windowSize.x;
-            }
-
-            windowPosWindowed.y = max(windowPosWindowed.y, monitorRect.top);
-            if (windowPosWindowed.y + windowSize.y > monitorRect.bottom)
-            {
-                windowPosWindowed.y = monitorRect.bottom - windowSize.y;
-            }
-        }
-
-        windowPos = windowPosWindowed;
-    }
-
-    // apply to the window
-    if (resizeWindow && !IsZoomed(window))
-    {
+        if (!monitor)
+            monitor = CurrentMonitor();
         SetWindowLong(window, GWL_STYLE, WindowStyle());
         SetWindowLong(window, GWL_EXSTYLE, WindowStyleEx());
         SetWindowPos(window, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW); // update the frame
-        auto padding = GetFrameSize(true);
-
-        SetWindowPos(window, 0,
-            windowPos.x - padding.left,
-            windowPos.y - padding.top,
-            windowSize.x,
-            windowSize.y,
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-
+        // Placed here rather than with a window subclass: wrappers that chain the window procedure break when it
+        // becomes a Unicode one
+        auto monitorRect = ::WindowStyle::MonitorRect(window, monitor);
+        auto client = DesiredClientSize(monitorRect);
+        auto frame = ::WindowStyle::FrameOf(window);
+        auto rect = ::WindowStyle::WindowRect(monitorRect, client.x, client.y, frame);
+        windowPos = { rect.left, rect.top };
+        windowSize = { rect.right - rect.left, rect.bottom - rect.top };
+        MoveWindow(window, rect.left, rect.top, windowSize.x, windowSize.y, TRUE);
+        ::WindowStyle::SquareCorners(window);
+        bool desktopSize = ::WindowStyle::CoversMonitor(monitorRect, client.x, client.y);
+        ::WindowStyle::detail::BorderColor(window, desktopSize && frame.Height() > 0);
+        ::WindowStyle::detail::MarkFullscreen(window, desktopSize);
         WindowUpdateTitle();
     }
+    else if (window)
+        ::WindowStyle::SquareCorners(window);
 
     // Windows is authoritative (DPI, maximization and frame metrics can change).
     RECT client;
@@ -167,20 +172,29 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
         client.right > 0 && client.bottom > 0)
     {
         windowSizeClient = { client.right, client.bottom };
-        if (!IsZoomed(window) && windowMode != WindowMode::Fullscreen)
+        // the user resized the window
+        if (!resizeWindow && !IsZoomed(window) && windowMode == WindowMode::Windowed)
             windowSizeWindowed = windowSizeClient;
     }
 
     // apply resolution to game internals
     if (gameTitle == GameTitle::GTASA)
     {
-        if (rsGlobalSA->ps) { rsGlobalSA->ps->fullScreen = false; rsGlobalSA->ps->window = window; }
+        if (rsGlobalSA->ps)
+        {
+            rsGlobalSA->ps->fullScreen = false;
+            rsGlobalSA->ps->window = window;
+        }
         rsGlobalSA->MaximumWidth = windowSizeClient.x;
         rsGlobalSA->MaximumHeight = windowSizeClient.y;
     }
     else
     {
-        if (rsGlobal->ps) { rsGlobal->ps->fullScreen = false; rsGlobal->ps->window = window; }
+        if (rsGlobal->ps)
+        {
+            rsGlobal->ps->fullScreen = false;
+            rsGlobal->ps->window = window;
+        }
         rsGlobal->screenWidth = rsGlobal->MaximumWidth = windowSizeClient.x;
         rsGlobal->screenHeight = rsGlobal->MaximumHeight = windowSizeClient.y;
     }
@@ -193,9 +207,11 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
             MAKELPARAM(windowSizeClient.x, windowSizeClient.y));
 }
 
+// A resolution chosen in the game's menu: a window of that size
 void WindowedMode::WindowResize(POINT resolution)
 {
-    if (resolution.x < Resolution_Min.x || resolution.y < Resolution_Min.y) return;
+    if (resolution.x < Resolution_Min.x || resolution.y < Resolution_Min.y)
+        return;
     // Restore before assigning the requested size: restoring dispatches WM_SIZE.
     if (IsZoomed(window))
     {
@@ -203,51 +219,44 @@ void WindowedMode::WindowResize(POINT resolution)
         ShowWindow(window, SW_RESTORE);
         windowUpdating = false;
     }
-    if (windowMode == WindowMode::Fullscreen)
-        windowMode = windowedStyle;
-
+    windowMode = WindowMode::Windowed;
     windowSizeWindowed = resolution;
-    WindowCalculateGeometry(true, true); // and resize the window
+    WindowCalculateGeometry(true);
     SaveConfig();
 }
 
+void WindowedMode::WindowSetMode(WindowMode mode)
+{
+    if (mode == windowMode || mode == WindowMode::Fullscreen)
+        return;
+    auto monitor = CurrentMonitor();
+    if (IsZoomed(window))
+    {
+        windowUpdating = true;
+        ShowWindow(window, SW_RESTORE);
+        windowUpdating = false;
+    }
+    windowMode = mode;
+    WindowCalculateGeometry(true, monitor);
+    SaveConfig();
+}
+
+// Alt+Enter: Windowed <-> Borderless
 void WindowedMode::WindowToggleFullscreen()
 {
-    if (IsIconic(window) || !HasFocus(window)) return;
-    const auto monitor = GetMonitorRect({windowPos.x + windowSize.x / 2, windowPos.y + windowSize.y / 2});
-    const POINT desktop = {monitor.right - monitor.left, monitor.bottom - monitor.top};
-    const bool leaving = windowMode == Fullscreen;
-    if (!leaving) windowedStyle = windowMode;
-    if (IsZoomed(window))
+    if (IsIconic(window) || !HasFocus(window))
+        return;
+    if (windowMode == WindowMode::Borderless)
     {
-        windowUpdating = true;
-        ShowWindow(window, SW_RESTORE);
-        windowUpdating = false;
+        // A window as big as the desktop would look unchanged: leave with a smaller one
+        auto monitor = ::WindowStyle::MonitorRect(window);
+        if (windowSizeWindowed.x <= 0 || ::WindowStyle::CoversMonitor(monitor, windowSizeWindowed.x, windowSizeWindowed.y))
+            windowSizeWindowed = { 640, 480 };
+        WindowSetMode(WindowMode::Windowed);
     }
-    // A desktop-sized borderless window would otherwise look unchanged when
-    // leaving fullscreen. Keep an unmistakably windowed restore size instead.
-    const bool fallback = windowSizeWindowed.x == desktop.x && windowSizeWindowed.y == desktop.y;
-    if (fallback) windowSizeWindowed = {640, 480};
-    windowMode = leaving ? windowedStyle : Fullscreen;
-    WindowCalculateGeometry(leaving && fallback, true);
-    SaveConfig();
+    else
+        WindowSetMode(WindowMode::Borderless);
 }
-
-void WindowedMode::WindowToggleStyle()
-{
-    if (IsIconic(window) || !HasFocus(window)) return;
-    if (IsZoomed(window))
-    {
-        windowUpdating = true;
-        ShowWindow(window, SW_RESTORE);
-        windowUpdating = false;
-    }
-    windowedStyle = windowedStyle == Windowed ? WindowedBorderless : Windowed;
-    windowMode = windowedStyle;
-    WindowCalculateGeometry(false, true);
-    SaveConfig();
-}
-
 void WindowedMode::WindowUpdateTitle()
 {
     if (windowMode == WindowMode::Windowed && HasFocus(window))
@@ -302,7 +311,7 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
                 switch(LOWORD(wParam))
                 {
                     case WA_INACTIVE:
-                        if (inst->autoPause && !inst->IsMainMenuVisible())
+                        if (Settings().Bool("MAIN.PauseOnFocusLoss") && !inst->IsMainMenuVisible())
                         {
                             inst->SwitchMainMenu(true);
                             inst->autoPauseExecuted = true;
@@ -318,8 +327,7 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
                         [[fallthrough]];
 
                     case WA_ACTIVE:
-                        if (inst->autoResume && 
-                            (!inst->autoPause || inst->autoPauseExecuted) && 
+                        if (Settings().Bool("MAIN.ResumeOnFocus") && inst->autoPauseExecuted &&
                             inst->IsMainMenuVisible()) // TODO: check if not in some submenu
                         {
                             inst->autoPauseExecuted = false;
@@ -351,16 +359,13 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
             if (!HasFocus(wnd))
                 return DefWindowProcA(wnd, msg, wParam, lParam); // bypass the game
             
-            // handle Alt+Enter and Ctrl+Enter key combinations
+            // Alt+Enter and Ctrl+Enter: Windowed <-> Borderless
             const bool alt = (lParam & (1L << 29)) != 0;
             const bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             if (wParam == VK_RETURN && (alt || control || inst->enterShortcutDown))
             {
                 if (!(lParam & (1L << 30)) && !inst->enterShortcutDown)
-                {
-                    if (alt) inst->WindowToggleFullscreen();
-                    else if (control) inst->WindowToggleStyle();
-                }
+                    inst->WindowToggleFullscreen();
                 inst->enterShortcutDown = true;
                 return 0;
             }
@@ -428,13 +433,20 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
         // user dragging the window edge
         case WM_ENTERSIZEMOVE:
             inst->sizing = true;
-            ClipCursor(NULL);
+            if (inst->cursorClipped)
+            {
+                ClipCursor(NULL);
+                inst->cursorClipped = false;
+            }
             return 0;
 
         case WM_GETMINMAXINFO:
         {
             auto limits = (MINMAXINFO*)lParam;
             limits->ptMinTrackSize = inst->SizeFromClient(Resolution_Min);
+            // a window as big as the screen keeps its frame outside it
+            limits->ptMaxTrackSize.x = max(limits->ptMaxTrackSize.x, inst->windowSize.x);
+            limits->ptMaxTrackSize.y = max(limits->ptMaxTrackSize.y, inst->windowSize.y);
             return 0;
         }
 
@@ -449,34 +461,6 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
             // minimal game resolution
             size.x = max(size.x, Resolution_Min.x);
             size.y = max(size.y, Resolution_Min.y);
-
-            // snap to known aspect ratios
-            auto idx = FindAspectRatio(size, 0.02f);
-            if (idx != -1)
-            {
-                auto currAspect = float(size.x) / size.y;
-
-                switch(wParam)
-                {
-                    case WMSZ_LEFT:
-                    case WMSZ_RIGHT:
-                        size.x = LONG(size.y * AspectRatios[idx].ratio);
-                        break;
-
-                    case WMSZ_TOP:
-                    case WMSZ_BOTTOM:
-                        size.y = LONG(size.x / AspectRatios[idx].ratio);
-                        break;
-
-                    default: // sizing both X and Y
-                    {
-                        if (currAspect < AspectRatios[idx].ratio)
-                            size.x = LONG(size.y * AspectRatios[idx].ratio);
-                        else
-                            size.y = LONG(size.x / AspectRatios[idx].ratio);
-                    }
-                }
-            }
 
             // update window title immediately
             inst->windowSizeClient.x = size.x;
@@ -495,7 +479,10 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 
         case WM_EXITSIZEMOVE:
             inst->sizing = false;
-            inst->WindowCalculateGeometry(false, true);
+            inst->WindowCalculateGeometry();
+            if (inst->d3dDevice)
+                CallWindowProcA(inst->oriWindowProc, wnd, WM_SIZE, SIZE_RESTORED,
+                    MAKELPARAM(inst->windowSizeClient.x, inst->windowSizeClient.y));
             inst->SaveConfig();
             inst->MouseUpdate(true);
             return 0;
@@ -506,6 +493,24 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
                 wParam != SIZE_MINIMIZED && wParam != SIZE_MAXHIDE && LOWORD(lParam) && HIWORD(lParam))
                 CallWindowProcA(inst->oriWindowProc, wnd, msg, wParam, lParam); // inform the game
             return DefWindowProcA(wnd, msg, wParam, lParam); // call default as otherwise maximization will not work correctly on later Windows versions
+
+        // a setting was changed by an editor, a preset or an overlay
+        case WM_APPLY_SETTINGS:
+            inst->ApplySettings();
+            return 0;
+
+        // moved to a monitor of another scale: keep the client size, the game's resolution
+        case WM_DPICHANGED:
+        {
+            if (inst->windowMode != WindowMode::Windowed || IsZoomed(wnd))
+                return 0;
+            auto suggested = reinterpret_cast<const RECT*>(lParam);
+            auto frame = ::WindowStyle::FrameOf(inst->WindowStyle(), inst->WindowStyleEx(), HIWORD(wParam));
+            SetWindowPos(wnd, nullptr, suggested->left, suggested->top,
+                inst->windowSizeClient.x + frame.Width(), inst->windowSizeClient.y + frame.Height(),
+                SWP_NOZORDER | SWP_NOACTIVATE);
+            return 0;
+        }
 
         // position or size changed
         case WM_WINDOWPOSCHANGED:
@@ -543,11 +548,8 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
                 if (!GetClientRect(wnd, &client) || client.right <= 0 || client.bottom <= 0)
                     return DefWindowProcA(wnd, msg, wParam, lParam);
                 inst->windowSizeClient = { client.right, client.bottom };
-                if (inst->windowMode != WindowMode::Fullscreen && !IsZoomed(wnd))
-                {
-                    inst->windowPosWindowed = inst->windowPos;
+                if (inst->windowMode == WindowMode::Windowed && !IsZoomed(wnd))
                     inst->windowSizeWindowed = inst->windowSizeClient;
-                }
                 inst->WindowCalculateGeometry();
                 inst->WindowUpdateTitle();
                 if (!inst->sizing) inst->SaveConfig();
@@ -627,12 +629,21 @@ void WindowedMode::MouseUpdate(bool force)
     bool inGame = hasFocus && PtInRect(&rect, pos);
     SetCursorVisible(!inGame);
 
-    // keep cursor inside the window
+    // keep the cursor inside the window while playing; release it only when it was ours
     if (hasFocus || force)
     {
-        if (!hasFocus || IsMainMenuVisible())
-            ClipCursor(NULL);
+        if (!hasFocus || sizing || IsMainMenuVisible() || !Settings().Bool("MAIN.ConfineCursor"))
+        {
+            if (cursorClipped)
+            {
+                ClipCursor(NULL);
+                cursorClipped = false;
+            }
+        }
         else
+        {
             ClipCursor(&rect);
+            cursorClipped = true;
+        }
     }
 }

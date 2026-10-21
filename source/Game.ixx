@@ -1,5 +1,6 @@
 module;
 #include "Bindings.h"
+#include "Settings.h"
 
 export module Game;
 
@@ -20,7 +21,11 @@ namespace
 
 export void InitializeGame()
 {
-    if (controller) return;
+    if (controller)
+        return;
+    // Fullscreen is the game's own exclusive mode: nothing to change
+    if (Settings().Int("MAIN.WindowMode") == WindowedMode::Fullscreen)
+        return;
     // Resolve the complete profile first, so an unsupported executable receives
     // no partial menu patches. III and VC share the same Win32 class name.
     GameBindings game;
@@ -33,12 +38,24 @@ export void InitializeGame()
 
     ResolveD3DCalls(game);
 
-    auto windowCall = FindPattern("68 00 00 CF 00 ? ? 6A 00 FF 15 ? ? ? ?") + 9;
+    auto window = hook::pattern("68 00 00 CF 00 ? ? 6A 00 FF 15 ? ? ? ?");
+    if (window.size() != 1)
+        throw std::runtime_error("Missing or ambiguous executable pattern.");
+    auto windowCall = reinterpret_cast<uintptr_t>(window.get_first(9));
     auto windowImport = ReadOperand<decltype(&CreateWindowExA)*>(windowCall, 2);
     WindowedMode::createWindow = *windowImport;
 
     controller = std::make_unique<WindowedMode>(game);
     inst = controller.get();
+    // Changes from editors and overlays come from other threads: apply them on the window's thread
+    for (auto id : { "MAIN.WindowMode", "MAIN.ConfineCursor", "WINDOW.Width", "WINDOW.Height" })
+    {
+        Settings().OnChange(id, []()
+        {
+            if (inst && inst->window)
+                PostMessageA(inst->window, WindowedMode::WM_APPLY_SETTINGS, 0, 0);
+        });
+    }
     // Replace only the executable's six-byte indirect call, preserving its
     // existing imported target (including any other plugin's replacement).
     injector::MakeNOP(windowCall, 6, true);

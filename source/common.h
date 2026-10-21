@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include "d3d8/d3d8.h"
 #include "d3d8/dinput.h"
-#include "IniReader.h"
 #include "injector/injector.hpp"
 
 

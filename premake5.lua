@@ -114,6 +114,7 @@ project "III.VC.SA.WindowedMode"
    files { "source/*.h", "source/*.ixx" }
    files { "source/*.cpp", "source/*.c" }
    files { "source/*.rc", "external/hooking/*.cpp", "external/hooking/*.h" }
+   files { "source/settings/*.json", "source/settings/text/*.json" }
    files { "external/injector/safetyhook/include/**.hpp", "external/injector/safetyhook/src/**.cpp" }
    files { "external/injector/zydis/**.h", "external/injector/zydis/**.c" }
 
@@ -122,7 +123,19 @@ project "III.VC.SA.WindowedMode"
    includedirs { "external/injector/safetyhook/include" }
    includedirs { "external/injector/zydis" }
    includedirs { "external/injector/include" }
-   includedirs { "external/IniReader" }
+   -- Shared headers and ASI Settings: FusionFixUtils, a submodule
+   includedirs { "external/FusionFixUtils/include", "external/FusionFixUtils" }
+   buildoptions { "/utf-8" }
+   defines { "_CRT_SECURE_NO_WARNINGS" }
+
+   -- The settings description and its texts are checked before every build; the validator is built by the
+   -- Tools solution (premake5.lua below), the build fails on errors
+   local validator = path.translate(path.join(_SCRIPT_DIR, "build/tools/asi-settings-validate.exe"))
+   local settingsdir = path.translate(path.join(_SCRIPT_DIR, "source/settings"))
+   prebuildcommands {
+      'if exist "' .. validator .. '" "' .. validator .. '" "' .. settingsdir .. '\\settings.json" "' .. settingsdir .. '\\text\\en.json" "' .. settingsdir .. '\\text\\fr.json" "' .. settingsdir .. '\\text\\de.json" "' .. settingsdir .. '\\text\\it.json" "' .. settingsdir .. '\\text\\es.json"',
+      'if errorlevel 1 exit /b 1',
+   }
 
    filter "configurations:Gta3"
       defines { "DEBUG" }
@@ -144,3 +157,24 @@ project "III.VC.SA.WindowedMode"
       optimize "on"
       symbols "On"
       targetdir "data"
+
+-- asi-settings-validate: checks the settings description before the plugin builds
+workspace "Tools"
+   configurations { "Release" }
+   platforms { "Win32" }
+   architecture "x86"
+   location "build"
+   cppdialect "C++latest"
+   characterset ("Unicode")
+   staticruntime "on"
+   buildoptions { "/Zc:__cplusplus /utf-8" }
+
+project "AsiSettingsValidator"
+   kind "ConsoleApp"
+   language "C++"
+   targetname "asi-settings-validate"
+   targetdir "build/tools"
+   objdir ("build/obj/tools")
+   files { "external/FusionFixUtils/asi_settings/tools/validator.cpp" }
+   defines { "NDEBUG" }
+   optimize "On"

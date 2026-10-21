@@ -38,52 +38,55 @@ public:
     void BeforePresent();
     std::array<uint8_t, sizeof(D3DPRESENT_PARAMETERS_D3D9)> resetSaved{}, resetEffective{};
 
-    // config file
-    CIniReader config;
-    void InitConfig(); // create default ini file
-    bool LoadConfig(); // returns true if maximized
+    // settings
+    void LoadConfig();
     void SaveConfig();
+    void ApplySettings();
 
     // game window
     struct AspectRatioInfo { const char* name; float ratio; };
     static const AspectRatioInfo AspectRatios[];
     static int FindAspectRatio(POINT resolution, float threshold = 0.007f);
 
+    // The values of MAIN.WindowMode; Fullscreen leaves the game as it is
     enum WindowMode : BYTE
     {
-        Windowed = 1, WindowedBorderless, Fullscreen,
-        Min = Windowed,
-        Max = Fullscreen
+        Fullscreen = 0,
+        Windowed = 1,
+        Borderless = 2,
     };
-    
+
+    static constexpr UINT WM_APPLY_SETTINGS = WM_APP + 0x5157;
+
     HWND window = 0;
     bool windowUpdating = false; // update in progress
     bool resetInProgress = false;
     bool sizing = false;
     bool postEffectUpdatePending = false;
     WindowMode windowMode = WindowMode::Windowed;
-    WindowMode windowedStyle = WindowMode::Windowed;
     bool enterShortcutDown = false;
-    
-    
+
     char windowTitle[64];
     // current window geometry
     POINT windowPos = {};
     POINT windowSize = {};
     POINT windowSizeClient = {};
-    // last properties of windowed mode
-    POINT windowPosWindowed = { -1, -1 };
-    POINT windowSizeWindowed = Resolution_Default;
+    // windowed mode: client size (0 = desktop size) and a point on the monitor it opens on
+    POINT windowSizeWindowed = {};
+    POINT windowMonitorPoint = { -1, -1 };
+    bool windowMaximized = false;
 
-    void WindowCalculateGeometry(bool center = false, bool resizeWindow = false);
+    HMONITOR CurrentMonitor() const;
+    POINT DesiredClientSize(const RECT& monitor) const;
+    void WindowCalculateGeometry(bool resizeWindow = false, HMONITOR monitor = nullptr);
     void WindowResize(POINT resolution);
     void ChangeResolution(DWORD modeIndex);
     void BackupVideoModes();
     void InitPresentationParameters();
     static void __cdecl ChangeResolutionSA(DWORD modeIndex);
     static int __cdecl ChangeVideoModeSA(DWORD modeIndex);
+    void WindowSetMode(WindowMode mode);
     void WindowToggleFullscreen();
-    void WindowToggleStyle();
     DWORD WindowStyle() const;
     DWORD WindowStyleEx() const;
     void WindowUpdateTitle();
@@ -91,23 +94,20 @@ public:
     POINT SizeFromClient(POINT clientSize) const;
     POINT ClientFromSize(POINT windowSize) const;
     RECT GetFrameSize(bool paddOnly = false) const; // size of window frame and extra padding/shadow introduced in later versions of Windows
-    
+
     // DirectX 3D related stuff
     bool IsD3D9() const;
 
     // other
     FpsCounter fpsCounter;
-    bool autoPause = true;
-    bool autoResume = true;
     bool autoPauseExecuted = false;
+    bool cursorClipped = false;
 
     bool IsMainMenuVisible() const;
     void SwitchMainMenu(bool show);
-    
+
     void MouseUpdate(bool force = false);
     void UpdatePostEffect();
-    void UpdateWidescreenFix();
 };
-
 export inline WindowedMode* inst = nullptr;
 

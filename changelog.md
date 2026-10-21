@@ -1,3 +1,13 @@
+## 3.0
+
+- settings in **III.VC.SA.WindowedMode.cfg** (ASI Settings): editable in FusionFixHub and in-game overlays, most of them while the game runs; the old ini isn't read any more
+- window modes Fullscreen (the game's own), Windowed and Borderless; Alt+Enter or Ctrl+Enter switches between Windowed and Borderless
+- a window at the desktop resolution keeps its frame outside the screen; windows are centered on their monitor
+- per-monitor DPI awareness and square window corners on Windows 11
+- the cursor is confined only while playing, and can be left free (`MAIN.ConfineCursor`)
+- removed borderless windows smaller than the screen and the snapping to common aspect ratios when resizing the window
+- removed the notification of Widescreen Fix after a resolution change, which current versions don't need
+
 ## 2.2
 
 - refactored game bindings into pattern-based modules, adding GTA III and Vice City v1.1 and Steam executable support

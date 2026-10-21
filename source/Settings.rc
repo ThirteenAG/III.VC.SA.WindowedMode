@@ -1,0 +1,7 @@
+// The plugin's settings description and the text of its settings in every language (ASI Settings)
+SETTINGS ASISETTINGS "settings/settings.json"
+en ASISETTINGS_TEXT "settings/text/en.json"
+fr ASISETTINGS_TEXT "settings/text/fr.json"
+de ASISETTINGS_TEXT "settings/text/de.json"
+it ASISETTINGS_TEXT "settings/text/it.json"
+es ASISETTINGS_TEXT "settings/text/es.json"

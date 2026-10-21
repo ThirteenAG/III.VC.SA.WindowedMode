@@ -47,24 +47,18 @@ static_assert(offsetof(RwCamera, frameBuffer) == 0x60);
 static_assert(sizeof(D3DPRESENT_PARAMETERS) == 52);
 static_assert(sizeof(D3DPRESENT_PARAMETERS_D3D9) == 56);
 
-// Resolve every binding before installing any game-code patches. Never accept
-// an ambiguous signature, including when a different mod changed the code.
-inline uintptr_t FindPattern(std::string_view bytes)
+template <size_t count = 1, typename... Args>
+hook::pattern find_pattern(Args... args)
 {
-    auto pattern = hook::pattern(bytes);
-    if (pattern.size() != 1)
-        throw std::runtime_error("Missing or ambiguous executable pattern: " + std::string(bytes));
-    return reinterpret_cast<uintptr_t>(pattern.get_first());
+    hook::pattern pattern;
+    ((pattern = hook::pattern(args), !pattern.count_hint(count).empty()) || ...);
+    return pattern;
 }
 
-inline uintptr_t FindPattern(std::string_view first, std::string_view fallback)
+template<class T> inline T ReadOperand(const void* instruction, ptrdiff_t offset)
 {
-    auto pattern = hook::pattern(first);
-    if (pattern.empty()) return FindPattern(fallback);
-    if (pattern.size() != 1) throw std::runtime_error("Ambiguous executable pattern: " + std::string(first));
-    return reinterpret_cast<uintptr_t>(pattern.get_first());
+    return *reinterpret_cast<const T*>(static_cast<const uint8_t*>(instruction) + offset);
 }
-
 template<class T> inline T ReadOperand(uintptr_t instruction, ptrdiff_t offset)
 {
     return *reinterpret_cast<T*>(instruction + offset);
@@ -108,7 +102,10 @@ inline void ResolveD3DCalls(GameBindings& game)
             game.beforeReset, afterReset);
         game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(create, -8);
         game.device = ReadOperand<IDirect3DDevice8**>(create, -19);
-        game.beforePresent = FindPattern("8B 02 89 14 24 FF 50 3C 8B D8");
+        auto present = hook::pattern("8B 02 89 14 24 FF 50 3C 8B D8");
+        if (present.size() != 1)
+            throw std::runtime_error("Missing or ambiguous executable pattern.");
+        game.beforePresent = reinterpret_cast<uintptr_t>(present.get_first());
     }
     else if (sa)
     {
@@ -118,7 +115,10 @@ inline void ResolveD3DCalls(GameBindings& game)
         collect("8B ? 68 ? ? ? ? 50 FF ? 40", 4, 2, 11, game.beforeReset, afterReset);
         game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(parameters, 1);
         game.device = ReadOperand<IDirect3DDevice8**>(reset, 1);
-        game.beforePresent = FindPattern("50 8B 10 FF 52 44 8B D8 81 FB 68 08 76 88");
+        auto present = hook::pattern("50 8B 10 FF 52 44 8B D8 81 FB 68 08 76 88");
+        if (present.size() != 1)
+            throw std::runtime_error("Missing or ambiguous executable pattern.");
+        game.beforePresent = reinterpret_cast<uintptr_t>(present.get_first());
     }
     else
     {
@@ -128,7 +128,10 @@ inline void ResolveD3DCalls(GameBindings& game)
         auto parameters = collect("68 ? ? ? ? 8B ? 50 FF ? 38", 2, 5, 11, game.beforeReset, afterReset);
         game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(parameters, 1);
         game.device = ReadOperand<IDirect3DDevice8**>(reset, 1);
-        game.beforePresent = FindPattern("50 8B ? FF ? 3C 3D 68 08 76 88");
+        auto present = hook::pattern("50 8B ? FF ? 3C 3D 68 08 76 88");
+        if (present.size() != 1)
+            throw std::runtime_error("Missing or ambiguous executable pattern.");
+        game.beforePresent = reinterpret_cast<uintptr_t>(present.get_first());
     }
 
     for (auto address : afterReset)

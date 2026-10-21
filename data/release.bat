@@ -8,7 +8,7 @@ if errorlevel 1 goto :error
 powershell -NoProfile -ExecutionPolicy Bypass -File "..\sign.ps1" -Path "%CD%\III.VC.SA.WindowedMode.asi"
 if errorlevel 1 goto :error
 if exist "III.VC.SA.WindowedMode.zip" del "III.VC.SA.WindowedMode.zip"
-"7za.exe" a -tzip "III.VC.SA.WindowedMode.zip" "III.VC.SA.WindowedMode.asi" "III.VC.SA.WindowedMode.ini" "..\README.md" "..\CHANGELOG.md"
+".\7za.exe" a -tzip "III.VC.SA.WindowedMode.zip" "III.VC.SA.WindowedMode.asi" "..\README.md" "..\CHANGELOG.md"
 if errorlevel 1 goto :error
 popd
 exit /b 0

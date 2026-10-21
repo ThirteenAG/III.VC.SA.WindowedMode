@@ -65,6 +65,10 @@ jobs:
     - name: Configure build
       run: ./premake5 vs2026 --with-version=${{ steps.versioning.outputs.version }}
 
+    - name: Build settings validator
+      run: |
+        msbuild -m build/Tools.slnx /property:Configuration=Release /property:Platform=Win32
+
     - name: Build
       run: |
         msbuild -m build/III.VC.SA.WindowedMode.slnx /property:Configuration=Release /property:Platform=Win32
@@ -87,6 +91,7 @@ jobs:
       with:
         archive: false
         path: data/III.VC.SA.WindowedMode.asi
+
 
     - name: Upload Release
       if: |

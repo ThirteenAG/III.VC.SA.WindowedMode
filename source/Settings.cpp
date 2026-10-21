@@ -1,57 +1,75 @@
 module;
 #include "stdafx.h"
 #include "Bindings.h"
+#include "Settings.h"
 
 module WindowedMode;
 
-void WindowedMode::InitConfig()
+void WindowedMode::LoadConfig()
 {
-    if (!std::filesystem::exists(config.GetIniPath()))
-        SaveConfig();
-}
-
-bool WindowedMode::LoadConfig()
-{
-    // Read old v2 keys as fallbacks. CIniReader is case-sensitive.
-    auto read = [this](const char* section, const char* key, const char* oldSection, const char* oldKey, int fallback)
+    auto& settings = Settings();
+    windowMode = static_cast<WindowMode>(std::clamp(settings.Int("MAIN.WindowMode"), int(Windowed), int(Borderless)));
+    windowSizeWindowed = { settings.Int("WINDOW.Width"), settings.Int("WINDOW.Height") };
+    if (windowSizeWindowed.x > 0 && windowSizeWindowed.y > 0)
     {
-        return config.ReadInteger(section, key, config.ReadInteger(oldSection, oldKey, fallback));
-    };
-    windowMode = static_cast<WindowMode>(std::clamp(read("MAIN", "WindowMode", "window", "mode", Windowed), int(Min), int(Max)));
-    windowedStyle = static_cast<WindowMode>(std::clamp(read("MAIN", "WindowedStyle", "window", "windowedStyle",
-        windowMode == Fullscreen ? Windowed : windowMode), int(Windowed), int(WindowedBorderless)));
-    if (windowMode != Fullscreen) windowedStyle = windowMode;
-
-    windowPosWindowed.x = read("WINDOW", "PositionX", "window", "positionX", -1);
-    windowPosWindowed.y = read("WINDOW", "PositionY", "window", "positionY", -1);
-    windowSizeWindowed.x = max(read("WINDOW", "ResolutionX", "window", "resolutionX", Resolution_Default.x), Resolution_Min.x);
-    windowSizeWindowed.y = max(read("WINDOW", "ResolutionY", "window", "resolutionY", Resolution_Default.y), Resolution_Min.y);
-    windowPos = windowPosWindowed;
-    windowSize = windowSizeClient = windowSizeWindowed;
-    autoPause = read("MAIN", "AutoPause", "game", "autoPause", 1) != 0;
-    autoResume = read("MAIN", "AutoResume", "game", "autoResume", 1) != 0;
-    return read("WINDOW", "Maximized", "window", "maximized", 0) != 0;
+        windowSizeWindowed.x = max(windowSizeWindowed.x, Resolution_Min.x);
+        windowSizeWindowed.y = max(windowSizeWindowed.y, Resolution_Min.y);
+    }
+    else
+        windowSizeWindowed = {};
+    windowMonitorPoint = { settings.Int("WINDOW.PositionX"), settings.Int("WINDOW.PositionY") };
+    windowMaximized = settings.Bool("WINDOW.Maximized");
 }
 
 void WindowedMode::SaveConfig()
 {
-    // Batch persistent window state into one write while preserving comments
-    // and unrelated settings, including the old keys during migration.
-    mINI::INIFile file(config.GetIniPath());
-    mINI::INIStructure ini;
-    file.read(ini);
-    auto set = [&ini](const char* section, const char* key, int value)
+    // Only changed values are stored: every Set writes the .cfg
+    auto& settings = Settings();
+    auto store = [&settings](const char* id, int value)
     {
-        ini[section][key] = std::to_string(value);
+        if (settings.Int(id) != value)
+            settings.Set(id, std::to_string(value));
     };
-    set("MAIN", "WindowMode", windowMode);
-    set("MAIN", "WindowedStyle", windowedStyle);
-    set("MAIN", "AutoPause", autoPause);
-    set("MAIN", "AutoResume", autoResume);
-    set("WINDOW", "Maximized", window && IsZoomed(window));
-    set("WINDOW", "PositionX", windowPosWindowed.x);
-    set("WINDOW", "PositionY", windowPosWindowed.y);
-    set("WINDOW", "ResolutionX", windowSizeWindowed.x);
-    set("WINDOW", "ResolutionY", windowSizeWindowed.y);
-    file.write(ini, true);
+    if (window && !IsIconic(window))
+    {
+        windowMaximized = IsZoomed(window) != FALSE;
+        RECT rect{};
+        if (GetWindowRect(window, &rect))
+            windowMonitorPoint = { (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
+    }
+    store("MAIN.WindowMode", windowMode);
+    store("WINDOW.Width", windowSizeWindowed.x);
+    store("WINDOW.Height", windowSizeWindowed.y);
+    store("WINDOW.Maximized", windowMaximized);
+    store("WINDOW.PositionX", windowMonitorPoint.x);
+    store("WINDOW.PositionY", windowMonitorPoint.y);
+}
+
+// Runs on the window's thread for changes from editors, presets and the in-game overlay
+void WindowedMode::ApplySettings()
+{
+    auto& settings = Settings();
+    auto mode = settings.Int("MAIN.WindowMode");
+    // Fullscreen is the game's own mode: switching to it applies after a restart
+    if (mode != Fullscreen && mode != windowMode)
+        WindowSetMode(static_cast<WindowMode>(std::clamp(mode, int(Windowed), int(Borderless))));
+
+    POINT size = { settings.Int("WINDOW.Width"), settings.Int("WINDOW.Height") };
+    if (size.x <= 0 || size.y <= 0)
+        size = {};
+    if (size.x != windowSizeWindowed.x || size.y != windowSizeWindowed.y)
+    {
+        windowSizeWindowed = size;
+        if (windowMode == Windowed)
+        {
+            if (IsZoomed(window))
+            {
+                windowUpdating = true;
+                ShowWindow(window, SW_RESTORE);
+                windowUpdating = false;
+            }
+            WindowCalculateGeometry(true);
+        }
+    }
+    MouseUpdate(true);
 }

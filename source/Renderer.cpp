@@ -151,15 +151,4 @@ void WindowedMode::UpdatePostEffect()
         if (bindings.blurOpen) bindings.blurOpen(camera);
         else bindings.setupBackBuffer();
     }
-    UpdateWidescreenFix();
-}
-
-void WindowedMode::UpdateWidescreenFix()
-{
-    // Retry discovery: ASI load order is not fixed.
-    const char* name = gameTitle == GameTitle::GTA3 ? "GTA3.WidescreenFix.asi" :
-        gameTitle == GameTitle::GTAVC ? "GTAVC.WidescreenFix.asi" : "GTASA.WidescreenFix.asi";
-    if (auto module = GetModuleHandleA(name))
-        if (auto update = reinterpret_cast<void(__cdecl*)()>(GetProcAddress(module, "UpdateVars")))
-            update();
 }

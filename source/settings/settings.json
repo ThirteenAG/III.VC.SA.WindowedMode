@@ -1,0 +1,79 @@
+{
+  "format": "asi-settings",
+  "version": "1.0",
+  "plugin": {
+    "name": "@plugin.name",
+    "priority": 40,
+    "games": [
+      { "name": "Grand Theft Auto III", "exe": [ "gta3.exe" ] },
+      { "name": "Grand Theft Auto: Vice City", "exe": [ "gta-vc.exe" ] },
+      { "name": "Grand Theft Auto: San Andreas", "exe": [ "gta_sa.exe", "gta-sa.exe" ] }
+    ]
+  },
+  "pages": [
+    { "id": "display", "title": "@page.display", "section": "display" }
+  ],
+  "settings": [
+    {
+      "id": "MAIN.WindowMode", "type": "choice", "default": 1,
+      "choices": [
+        { "value": 0, "label": "@windowmode.fullscreen" },
+        { "value": 1, "label": "@windowmode.windowed" },
+        { "value": 2, "label": "@windowmode.borderless" }
+      ],
+      "label": "@windowmode", "description": "@windowmode.description",
+      "page": "display", "control": [ "cycler", "dropdown" ]
+    },
+    {
+      "id": "MAIN.ConfineCursor", "type": "bool", "default": 1,
+      "label": "@confinecursor", "description": "@confinecursor.description",
+      "page": "display", "control": [ "switch", "cycler" ],
+      "visibleIf": { "setting": "MAIN.WindowMode", "notEquals": 0 },
+      "presets": { "vanilla": 1, "recommended": 1, "enhanced": 1 }
+    },
+    {
+      "id": "MAIN.PauseOnFocusLoss", "type": "bool", "default": 1,
+      "label": "@pausefocus", "description": "@pausefocus.description",
+      "page": "display", "control": [ "switch", "cycler" ],
+      "visibleIf": { "setting": "MAIN.WindowMode", "notEquals": 0 },
+      "presets": { "vanilla": 1, "recommended": 1, "enhanced": 1 }
+    },
+    {
+      "id": "MAIN.ResumeOnFocus", "type": "bool", "default": 1,
+      "label": "@resumefocus", "description": "@resumefocus.description",
+      "page": "display", "control": [ "switch", "cycler" ],
+      "visibleIf": { "setting": "MAIN.WindowMode", "notEquals": 0 },
+      "enabledIf": { "setting": "MAIN.PauseOnFocusLoss", "equals": 1 },
+      "presets": { "vanilla": 1, "recommended": 1, "enhanced": 1 }
+    },
+    {
+      "id": "WINDOW.Width", "type": "int", "default": 0, "min": 0, "max": 16384, "unit": "px",
+      "special": [ { "value": 0, "label": "@desktop" } ],
+      "label": "@width", "description": "@width.description",
+      "page": "display", "group": "@group.window", "visibility": "editor"
+    },
+    {
+      "id": "WINDOW.Height", "type": "int", "default": 0, "min": 0, "max": 16384, "unit": "px",
+      "special": [ { "value": 0, "label": "@desktop" } ],
+      "label": "@height", "description": "@height.description",
+      "page": "display", "group": "@group.window", "visibility": "editor"
+    },
+    {
+      "id": "WINDOW.Maximized", "type": "bool", "default": 0,
+      "label": "@maximized", "description": "@maximized.description",
+      "page": "display", "group": "@group.window", "visibility": "file"
+    },
+    {
+      "id": "WINDOW.PositionX", "type": "int", "default": -1,
+      "special": [ { "value": -1, "label": "@primary" } ],
+      "label": "@positionx", "description": "@position.description",
+      "page": "display", "group": "@group.window", "visibility": "file"
+    },
+    {
+      "id": "WINDOW.PositionY", "type": "int", "default": -1,
+      "special": [ { "value": -1, "label": "@primary" } ],
+      "label": "@positiony", "description": "@position.description",
+      "page": "display", "group": "@group.window", "visibility": "file"
+    }
+  ]
+}
