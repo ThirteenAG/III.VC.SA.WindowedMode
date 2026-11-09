@@ -152,6 +152,17 @@ struct RwRaster
     int32_t nOriginalStride;
 };
 
+struct RwImage
+{
+    int32_t flags;
+    int32_t width;
+    int32_t height;
+    int32_t depth;
+    int32_t stride;
+    uint8_t* cpPixels;
+    void* palette;
+};
+
 struct RwCamera
 {
     char RwObjectHasFrame[20];

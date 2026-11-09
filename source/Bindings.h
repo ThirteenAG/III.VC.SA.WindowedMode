@@ -28,6 +28,9 @@ struct GameBindings
     void (*setupBackBuffer)() = nullptr;
     void (*selectVideoMode)(DWORD) = nullptr;
     int (*changeVideoMode)(DWORD) = nullptr;
+    RwImage* (*imageCreate)(int32_t, int32_t, int32_t) = nullptr;
+    RwImage* (*imageAllocatePixels)(RwImage*) = nullptr;
+    uintptr_t grabScreen = 0;
     IDirect3DDevice8** device = nullptr;
     D3DPRESENT_PARAMETERS* presentParameters = nullptr;
     std::vector<uintptr_t> beforeCreateDevice, afterCreateDevice;
@@ -44,6 +47,7 @@ struct GameBindings
 
 static_assert(sizeof(DisplayMode) == 20);
 static_assert(offsetof(RwCamera, frameBuffer) == 0x60);
+static_assert(offsetof(RwImage, cpPixels) == 0x14);
 static_assert(sizeof(D3DPRESENT_PARAMETERS) == 52);
 static_assert(sizeof(D3DPRESENT_PARAMETERS_D3D9) == 56);
 

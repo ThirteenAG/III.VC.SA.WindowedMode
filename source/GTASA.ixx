@@ -21,10 +21,13 @@ export GameBindings ResolveGTASA()
     // Anchor on the mouse coordinates, not the following rendering calls: other
     // ASIs can replace those calls independently of mouse centering.
     auto mouse = hook::pattern("DB 05 ? ? ? ? 8D 44 24 00 50 D8 0D ? ? ? ? D9 5C 24 04 DB 05 ? ? ? ? D8 0D ? ? ? ? D9 5C 24 08");
+    // The screen grab of photos and screenshots, and its image allocation
+    auto grabScreen = hook::pattern("83 EC 2C 55 56 E8 ? ? ? ? 8D 4C 24 14 51 8B F0 8B 06 6A 00 56 FF 50 20");
+    auto grabImage = hook::pattern("6A 20 52 50 E8 ? ? ? ? 8B E8 83 C4 0C 85 ED 74 ? 57 55 E8");
 
     // Every binding is resolved before any game code is patched; an ambiguous match counts as missing
     for (auto pattern : { &state, &globals, &modes, &getNumVideoModes, &getCurrentVideoMode, &menuActive, &menuOpen,
-        &menuResolution, &mode, &deviceDialog, &mouse })
+        &menuResolution, &mode, &deviceDialog, &mouse, &grabScreen, &grabImage })
     {
         if (pattern->size() != 1)
             throw std::runtime_error("Missing or ambiguous executable pattern.");
@@ -46,6 +49,10 @@ export GameBindings ResolveGTASA()
     game.setupBackBuffer = reinterpret_cast<decltype(game.setupBackBuffer)>(CallTarget(modeAddress + 13));
     game.camera = ReadOperand<RwCamera**>(modeAddress, 19);
     game.deviceDialog = reinterpret_cast<uintptr_t>(deviceDialog.get_first(7));
+    game.grabScreen = reinterpret_cast<uintptr_t>(grabScreen.get_first());
+    auto imageCall = reinterpret_cast<uintptr_t>(grabImage.get_first(4));
+    game.imageCreate = reinterpret_cast<decltype(game.imageCreate)>(CallTarget(imageCall));
+    game.imageAllocatePixels = reinterpret_cast<decltype(game.imageAllocatePixels)>(CallTarget(imageCall + 16));
     auto call = mouse.get_first<const uint8_t>(37);
     if (call[0] == 0xE8)
         game.mouseRecenter = reinterpret_cast<uintptr_t>(call);

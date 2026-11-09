@@ -66,6 +66,7 @@ export void InitializeGame()
         injector::MakeCALL(game.changeVideoModeCall, WindowedMode::ChangeVideoModeSA, true);
         injector::WriteMemory<uint8_t>(game.deviceDialog, 0xEB, true);
         if (game.mouseRecenter) injector::MakeNOP(game.mouseRecenter, 5, true);
+        injector::MakeJMP(game.grabScreen, WindowedMode::GrabScreenSA, true);
     }
     else
     {

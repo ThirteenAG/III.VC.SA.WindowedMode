@@ -36,6 +36,7 @@ public:
     void BeforeReset();
     void AfterReset(HRESULT result);
     void BeforePresent();
+    static RwImage* __cdecl GrabScreenSA();
     std::array<uint8_t, sizeof(D3DPRESENT_PARAMETERS_D3D9)> resetSaved{}, resetEffective{};
 
     // settings
