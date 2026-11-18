@@ -47,15 +47,7 @@ const WindowedMode::AspectRatioInfo WindowedMode::AspectRatios[] = {
 HWND __stdcall WindowedMode::InitWindow(DWORD, LPCSTR className, LPCSTR title, DWORD,
     int, int, int, int, HWND parent, HMENU menu, HINSTANCE module, LPVOID param)
 {
-    try
-    {
-        inst->InstallRenderHooks();
-    }
-    catch (const std::exception& error)
-    {
-        ShowError("%s", error.what());
-        return nullptr;
-    }
+    inst->InstallRenderHooks();
     inst->LoadConfig();
 
     // The monitor the window was on last time, the primary one at first

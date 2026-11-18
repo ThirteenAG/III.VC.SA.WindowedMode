@@ -137,9 +137,7 @@ void WindowedMode::InstallRenderHooks()
     std::vector<SafetyHookMid> pending;
     auto add = [&pending](uintptr_t address, safetyhook::MidHookFn callback)
     {
-        auto hook = safetyhook::create_mid(reinterpret_cast<void*>(address), callback);
-        if (!hook) throw std::runtime_error("Could not hook a RenderWare device call.");
-        pending.push_back(std::move(hook));
+        pending.push_back(safetyhook::create_mid(reinterpret_cast<void*>(address), callback));
     };
     for (auto address : bindings.beforeCreateDevice)
         add(address, [](SafetyHookContext&) { inst->InitPresentationParameters(); });

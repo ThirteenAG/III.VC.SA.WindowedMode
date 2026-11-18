@@ -45,18 +45,23 @@ struct GameBindings
     uintptr_t mouseRecenter = 0;
 };
 
+// The CreateWindowExA call of the game's window: push WS_OVERLAPPEDWINDOW ... push 0, then the call
+inline constexpr auto windowCreationPattern = "68 00 00 CF 00 ? ? 6A 00";
+
 static_assert(sizeof(DisplayMode) == 20);
 static_assert(offsetof(RwCamera, frameBuffer) == 0x60);
 static_assert(offsetof(RwImage, cpPixels) == 0x14);
 static_assert(sizeof(D3DPRESENT_PARAMETERS) == 52);
 static_assert(sizeof(D3DPRESENT_PARAMETERS_D3D9) == 56);
 
-template <size_t count = 1, typename... Args>
-hook::pattern find_pattern(Args... args)
+// RenderWare's RwEngineGetNumVideoModes (5) and RwEngineGetCurrentVideoMode (10). Anchored inside the
+// function: plugins that list more video modes hook its first bytes. The Steam build of III is compiled differently.
+inline DWORD (*VideoModeQuery(uint8_t id))()
 {
-    hook::pattern pattern;
-    ((pattern = hook::pattern(args), !pattern.count_hint(count).empty()) || ...);
-    return pattern;
+    auto shared = hook::pattern(std::format("6A 00 8D 44 24 04 6A 00 50 83 C1 10 6A {:02X} 51 E8", id));
+    if (!shared.empty())
+        return shared.get_first<DWORD()>(-7);
+    return hook::pattern(std::format("C7 04 24 {:02X} 00 00 00 8D 54 24 10 33 C9", id)).get_first<DWORD()>(-8);
 }
 
 template<class T> inline T ReadOperand(const void* instruction, ptrdiff_t offset)
@@ -70,8 +75,6 @@ template<class T> inline T ReadOperand(uintptr_t instruction, ptrdiff_t offset)
 
 inline uintptr_t CallTarget(uintptr_t call)
 {
-    if (*reinterpret_cast<uint8_t*>(call) != 0xE8)
-        throw std::runtime_error("Expected a relative call at the resolved hook site.");
     return call + 5 + ReadOperand<int32_t>(call, 1);
 }
 
@@ -80,9 +83,7 @@ inline void ResolveD3DCalls(GameBindings& game)
     auto collect = [](std::string_view bytes, size_t count, ptrdiff_t before, ptrdiff_t after,
         std::vector<uintptr_t>& beforeCalls, std::vector<uintptr_t>& afterCalls, size_t afterEvery = 1)
     {
-        auto pattern = hook::pattern(bytes);
-        if (pattern.size() != count)
-            throw std::runtime_error("Missing or ambiguous RenderWare calls: " + std::string(bytes));
+        auto pattern = hook::pattern(bytes).count(count);
         for (size_t i = 0; i < count; ++i)
         {
             auto address = reinterpret_cast<uintptr_t>(pattern.get(i).get<void>());
@@ -106,10 +107,7 @@ inline void ResolveD3DCalls(GameBindings& game)
             game.beforeReset, afterReset);
         game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(create, -8);
         game.device = ReadOperand<IDirect3DDevice8**>(create, -19);
-        auto present = hook::pattern("8B 02 89 14 24 FF 50 3C 8B D8");
-        if (present.size() != 1)
-            throw std::runtime_error("Missing or ambiguous executable pattern.");
-        game.beforePresent = reinterpret_cast<uintptr_t>(present.get_first());
+        game.beforePresent = reinterpret_cast<uintptr_t>(hook::get_pattern("8B 02 89 14 24 FF 50 3C 8B D8"));
     }
     else if (sa)
     {
@@ -119,10 +117,7 @@ inline void ResolveD3DCalls(GameBindings& game)
         collect("8B ? 68 ? ? ? ? 50 FF ? 40", 4, 2, 11, game.beforeReset, afterReset);
         game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(parameters, 1);
         game.device = ReadOperand<IDirect3DDevice8**>(reset, 1);
-        auto present = hook::pattern("50 8B 10 FF 52 44 8B D8 81 FB 68 08 76 88");
-        if (present.size() != 1)
-            throw std::runtime_error("Missing or ambiguous executable pattern.");
-        game.beforePresent = reinterpret_cast<uintptr_t>(present.get_first());
+        game.beforePresent = reinterpret_cast<uintptr_t>(hook::get_pattern("50 8B 10 FF 52 44 8B D8 81 FB 68 08 76 88"));
     }
     else
     {
@@ -132,10 +127,7 @@ inline void ResolveD3DCalls(GameBindings& game)
         auto parameters = collect("68 ? ? ? ? 8B ? 50 FF ? 38", 2, 5, 11, game.beforeReset, afterReset);
         game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(parameters, 1);
         game.device = ReadOperand<IDirect3DDevice8**>(reset, 1);
-        auto present = hook::pattern("50 8B ? FF ? 3C 3D 68 08 76 88");
-        if (present.size() != 1)
-            throw std::runtime_error("Missing or ambiguous executable pattern.");
-        game.beforePresent = reinterpret_cast<uintptr_t>(present.get_first());
+        game.beforePresent = reinterpret_cast<uintptr_t>(hook::get_pattern("50 8B ? FF ? 3C 3D 68 08 76 88"));
     }
 
     for (auto address : afterReset)

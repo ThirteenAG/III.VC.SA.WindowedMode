@@ -270,19 +270,3 @@ static inline void SetCursorVisible(bool show)
     }
 }
 
-template <class ... Args>
-static void ShowError(const char* format, Args ... args)
-{
-    auto msg = StringPrintf(format, args...);
-
-    auto wnd = GetActiveWindow();
-    if (wnd)
-    {
-        PostMessage(wnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-        ShowWindow(wnd, SW_MINIMIZE);
-    }
-
-    SetCursorVisible(true);
-    MessageBoxA(wnd, msg.c_str(), rsc_ProductName, MB_SYSTEMMODAL | MB_ICONERROR);
-}
-
