@@ -14,8 +14,9 @@ export GameBindings ResolveGTAVC()
     game.getNumVideoModes = VideoModeQuery(5);
     game.getCurrentVideoMode = VideoModeQuery(10);
     game.menuActive = *hook::get_pattern<bool*>("80 3D ? ? ? ? 00 75 ? 80 3D ? ? ? ? 00 74 ? 30 C0 EB ? B0 01 89 E9", 2);
-    // CGame::InitAfterLostFocus, found past the bytes a hook at its start replaces: focus plugins hook it
-    game.menuOpen = *hook::get_pattern<bool*>("75 10 80 3D ? ? ? ? 00 75 07 C6 05 ? ? ? ? 01 C3", 13);
+    // CMenuManager::m_bStartUpFrontEndRequested (+0x12) next to m_bMenuActive (+0x38). The code that sets it is
+    // changed by focus plugins.
+    game.menuOpen = game.menuActive - (0x38 - 0x12);
     game.menuClose = game.menuOpen - 1;
     game.camera = *hook::get_pattern<RwCamera**>("FF 35 ? ? ? ? E8 ? ? ? ? 59 59 0F B6 4B 76 69 C9 CC 01 00 00", 2);
     // Found past the bytes a hook at its start replaces: other plugins hook the function

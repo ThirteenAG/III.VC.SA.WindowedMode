@@ -14,8 +14,9 @@ export GameBindings ResolveGTASA()
     game.getNumVideoModes = VideoModeQuery(5);
     game.getCurrentVideoMode = VideoModeQuery(10);
     game.menuActive = *hook::get_pattern<bool*>("A0 ? ? ? ? 84 C0 0F 85 ? ? ? ? A1 ? ? ? ? 85 C0 0F 85 ? ? ? ? A0 ? ? ? ? 84 C0 75 ?", 1);
-    // CGame::InitAfterLostFocus, found past the bytes a hook at its start replaces: focus plugins hook it
-    game.menuOpen = *hook::get_pattern<bool*>("84 C0 75 10 A0 ? ? ? ? 84 C0 75 07 C6 05 ? ? ? ? 01 C3", 15);
+    // CMenuManager::m_bStartUpFrontEndRequested (+0x33) next to m_bMenuActive (+0x5C). The code that sets it is
+    // changed by focus plugins (MixSets keeps the game running in the background that way).
+    game.menuOpen = game.menuActive - (0x5C - 0x33);
     game.menuClose = game.menuOpen - 1;
     game.menuResolutionCall = reinterpret_cast<uintptr_t>(hook::get_pattern("50 89 86 D4 00 00 00 E8 ? ? ? ? 83 C4 04 8B CE E8 ? ? ? ? 8B CE 88 9E B8 00 00 00", 7));
     game.selectVideoMode = reinterpret_cast<decltype(game.selectVideoMode)>(CallTarget(game.menuResolutionCall));
