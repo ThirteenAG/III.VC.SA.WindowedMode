@@ -185,7 +185,7 @@ void WindowedMode::InitPresentationParameters()
         d3dPresentParams9->BackBufferHeight = windowSizeClient.y;
         d3dPresentParams9->BackBufferFormat = D3DFMT_A8R8G8B8;
         d3dPresentParams9->SwapEffect = D3DSWAPEFFECT_DISCARD;
-        d3dPresentParams9->FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+        d3dPresentParams9->FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
         d3dPresentParams9->FullScreen_RefreshRateInHz = 0;
     }
     else
@@ -250,7 +250,7 @@ void WindowedMode::BeforeReset()
         parameters.hDeviceWindow = window;
         parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
         parameters.FullScreen_RefreshRateInHz = 0;
-        if (!IsD3D9()) parameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+        parameters.FullScreen_PresentationInterval = IsD3D9() ? D3DPRESENT_INTERVAL_IMMEDIATE : D3DPRESENT_INTERVAL_DEFAULT;
     };
     if (IsD3D9()) prepare(*d3dPresentParams9);
     else prepare(*d3dPresentParams8);
