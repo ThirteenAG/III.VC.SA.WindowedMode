@@ -171,6 +171,13 @@ void WindowedMode::InstallRenderHooks()
         }
     }
     add(bindings.beforePresent, [](SafetyHookContext&) { inst->BeforePresent(); });
+    if (bindings.rasterVSyncCheck)
+        add(bindings.rasterVSyncCheck, [](SafetyHookContext& regs)
+        {
+            // Clear rwRASTERFLIPWAITVSYNC in CL before RenderWare checks the interval.
+            // This keeps its request consistent with IMMEDIATE and prevents repeated resets.
+            regs.ecx &= ~1u;
+        });
     hooks = std::move(pending);
 }
 

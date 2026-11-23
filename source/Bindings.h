@@ -37,6 +37,7 @@ struct GameBindings
     std::vector<uintptr_t> beforeReset;
     std::vector<ResetCompletion> resetCompletions;
     uintptr_t beforePresent = 0;
+    uintptr_t rasterVSyncCheck = 0;
     uintptr_t menuResolutionCall = 0;
     uintptr_t changeVideoModeCall = 0;
     uintptr_t resolutionColor = 0;
@@ -118,6 +119,7 @@ inline void ResolveD3DCalls(GameBindings& game)
         game.presentParameters = ReadOperand<D3DPRESENT_PARAMETERS*>(parameters, 1);
         game.device = ReadOperand<IDirect3DDevice8**>(reset, 1);
         game.beforePresent = reinterpret_cast<uintptr_t>(hook::get_pattern("50 8B 10 FF 52 44 8B D8 81 FB 68 08 76 88"));
+        game.rasterVSyncCheck = reinterpret_cast<uintptr_t>(hook::get_pattern("8A 4C 24 0C B8 01 00 00 00 53 56 84 C8 8B 0D ? ? ? ? 57 74", 11));
     }
     else
     {
