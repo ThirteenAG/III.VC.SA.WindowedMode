@@ -23,11 +23,13 @@ FusionFixHub installs the plugin as an extra of the GTA III, Vice City and San A
 * **Fullscreen**: the game's own exclusive fullscreen; the plugin changes nothing.
 * **Windowed** (default): a window of the chosen resolution, centered on its monitor, resizable. At the desktop resolution the window's frame lies outside the screen, so it looks like borderless fullscreen.
 * **Borderless**: a window without frame covering the monitor, at the desktop resolution.
+* **Borderless Window**: a window without frame at the chosen resolution, centered on its monitor.
 
 The game is DPI aware, so the picture isn't scaled or blurred at 125-300 % Windows scaling, and windows have square corners on Windows 11.
 
 ## Hotkeys
-* **Alt+Enter** or **Ctrl+Enter**: switches between Windowed and Borderless
+* **Alt+Enter**: switches between Windowed and Borderless
+* **Ctrl+Enter**: switches between Windowed and Borderless Window
 
 The window can be resized to any size; the game's picture and aspect ratio follow it.
 
@@ -37,11 +39,11 @@ Settings are stored next to the plugin in **III.VC.SA.WindowedMode.cfg** and can
 
 | Setting | Values | Default |
 |---|---|---|
-| `MAIN.WindowMode` | 0 Fullscreen, 1 Windowed, 2 Borderless (to or from 0 after a restart) | 1 |
+| `MAIN.WindowMode` | 0 Fullscreen, 1 Windowed, 2 Borderless, 3 Borderless Window (to or from 0 after a restart) | 1 |
 | `MAIN.ConfineCursor` | keeps the cursor inside the window while playing | 1 |
 | `MAIN.PauseOnFocusLoss` | opens the pause menu when the window loses the focus | 1 |
 | `MAIN.ResumeOnFocus` | closes that pause menu again when the focus returns | 1 |
-| `WINDOW.Width`, `WINDOW.Height` | the window's picture size in Windowed mode, 0 = desktop; set by the game's resolution menu and by resizing | 0 |
+| `WINDOW.Width`, `WINDOW.Height` | the window's picture size in Windowed and Borderless Window modes, 0 = desktop; set by the game's resolution menu and by resizing | 0 |
 | `WINDOW.Maximized`, `WINDOW.PositionX`, `WINDOW.PositionY` | saved state: maximized, a point on the monitor the window opens on | 0, -1, -1 |
 
 The presets (Vanilla, Recommended, Enhanced) leave every setting of this plugin as it is: they are all the player's own choices. Settings of older versions (**III.VC.SA.WindowedMode.ini**) aren't read; the ini can be deleted.
