@@ -55,6 +55,7 @@ public:
         Fullscreen = 0,
         Windowed = 1,
         Borderless = 2,
+        BorderlessWindow = 3,
     };
 
     static constexpr UINT WM_APPLY_SETTINGS = WM_APP + 0x5157;
@@ -88,6 +89,7 @@ public:
     static int __cdecl ChangeVideoModeSA(DWORD modeIndex);
     void WindowSetMode(WindowMode mode);
     void WindowToggleFullscreen();
+    void WindowToggleStyle();
     DWORD WindowStyle() const;
     DWORD WindowStyleEx() const;
     void WindowUpdateTitle();

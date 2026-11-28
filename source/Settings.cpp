@@ -8,7 +8,7 @@ module WindowedMode;
 void WindowedMode::LoadConfig()
 {
     auto& settings = Settings();
-    windowMode = static_cast<WindowMode>(std::clamp(settings.Int("MAIN.WindowMode"), int(Windowed), int(Borderless)));
+    windowMode = static_cast<WindowMode>(std::clamp(settings.Int("MAIN.WindowMode"), int(Windowed), int(BorderlessWindow)));
     windowSizeWindowed = { settings.Int("WINDOW.Width"), settings.Int("WINDOW.Height") };
     if (windowSizeWindowed.x > 0 && windowSizeWindowed.y > 0)
     {
@@ -52,7 +52,7 @@ void WindowedMode::ApplySettings()
     auto mode = settings.Int("MAIN.WindowMode");
     // Fullscreen is the game's own mode: switching to it applies after a restart
     if (mode != Fullscreen && mode != windowMode)
-        WindowSetMode(static_cast<WindowMode>(std::clamp(mode, int(Windowed), int(Borderless))));
+        WindowSetMode(static_cast<WindowMode>(std::clamp(mode, int(Windowed), int(BorderlessWindow))));
 
     POINT size = { settings.Int("WINDOW.Width"), settings.Int("WINDOW.Height") };
     if (size.x <= 0 || size.y <= 0)
@@ -60,7 +60,7 @@ void WindowedMode::ApplySettings()
     if (size.x != windowSizeWindowed.x || size.y != windowSizeWindowed.y)
     {
         windowSizeWindowed = size;
-        if (windowMode == Windowed)
+        if (windowMode == Windowed || windowMode == BorderlessWindow)
         {
             if (IsZoomed(window))
             {

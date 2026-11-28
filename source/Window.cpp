@@ -211,7 +211,8 @@ void WindowedMode::WindowResize(POINT resolution)
         ShowWindow(window, SW_RESTORE);
         windowUpdating = false;
     }
-    windowMode = WindowMode::Windowed;
+    if (windowMode != WindowMode::BorderlessWindow)
+        windowMode = WindowMode::Windowed;
     windowSizeWindowed = resolution;
     WindowCalculateGeometry(true);
     SaveConfig();
@@ -231,6 +232,14 @@ void WindowedMode::WindowSetMode(WindowMode mode)
     windowMode = mode;
     WindowCalculateGeometry(true, monitor);
     SaveConfig();
+}
+
+// Ctrl+Enter: Windowed <-> Borderless Window
+void WindowedMode::WindowToggleStyle()
+{
+    if (IsIconic(window) || !HasFocus(window))
+        return;
+    WindowSetMode(windowMode == WindowMode::BorderlessWindow ? WindowMode::Windowed : WindowMode::BorderlessWindow);
 }
 
 // Alt+Enter: Windowed <-> Borderless
@@ -351,13 +360,18 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
             if (!HasFocus(wnd))
                 return DefWindowProcA(wnd, msg, wParam, lParam); // bypass the game
             
-            // Alt+Enter and Ctrl+Enter: Windowed <-> Borderless
+            // Alt+Enter: Windowed <-> Borderless. Ctrl+Enter: Windowed <-> Borderless Window
             const bool alt = (lParam & (1L << 29)) != 0;
             const bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             if (wParam == VK_RETURN && (alt || control || inst->enterShortcutDown))
             {
                 if (!(lParam & (1L << 30)) && !inst->enterShortcutDown)
-                    inst->WindowToggleFullscreen();
+                {
+                    if (alt)
+                        inst->WindowToggleFullscreen();
+                    else
+                        inst->WindowToggleStyle();
+                }
                 inst->enterShortcutDown = true;
                 return 0;
             }
@@ -494,7 +508,7 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
         // moved to a monitor of another scale: keep the client size, the game's resolution
         case WM_DPICHANGED:
         {
-            if (inst->windowMode != WindowMode::Windowed || IsZoomed(wnd))
+            if ((inst->windowMode != WindowMode::Windowed && inst->windowMode != WindowMode::BorderlessWindow) || IsZoomed(wnd))
                 return 0;
             auto suggested = reinterpret_cast<const RECT*>(lParam);
             auto frame = ::WindowStyle::FrameOf(inst->WindowStyle(), inst->WindowStyleEx(), HIWORD(wParam));

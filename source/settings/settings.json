@@ -19,7 +19,8 @@
       "choices": [
         { "value": 0, "label": "@windowmode.fullscreen" },
         { "value": 1, "label": "@windowmode.windowed" },
-        { "value": 2, "label": "@windowmode.borderless" }
+        { "value": 2, "label": "@windowmode.borderless" },
+        { "value": 3, "label": "@windowmode.borderlesswindow" }
       ],
       "label": "@windowmode", "description": "@windowmode.description",
       "page": "display", "control": [ "cycler", "dropdown" ]
